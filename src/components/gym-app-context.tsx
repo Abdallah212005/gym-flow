@@ -1,17 +1,22 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
-import type { GymSection, Member } from "@/lib/gym-data";
+import type { GymAccount, GymAppData, GymAppUser, GymSection, Member } from "@/lib/gym-data";
 
 type GymAppContextValue = {
+  user: GymAppUser;
+  gym: GymAccount | null;
   members: Member[];
+  data: GymAppData;
   planPrices: Record<string, number>;
-  updatePlanPrices: (prices: Record<string, number>) => void;
-  addMember: (member: Omit<Member, "id" | "membershipHistory" | "activityHistory">) => void;
-  deleteMember: (id: number) => void;
-  renewMember: (id: number, plan: string, paidAmount: number, paymentMethod: string) => void;
-  recordAttendance: (id: number) => void;
-  recordPayment: (id: number, amount: number, detail: string, paymentMethod: string) => void;
+  updatePlanPrices: (prices: Record<string, number>) => Promise<void>;
+  refreshData: () => Promise<void>;
+  addRecord: (collection: keyof GymAppData, record: Record<string, unknown>) => Promise<void>;
+  addMember: (member: Omit<Member, "id" | "membershipHistory" | "activityHistory" | "joinedAt" | "expiresAt" | "status" | "paid" | "initials" | "color">) => Promise<boolean>;
+  deleteMember: (id: string) => Promise<void>;
+  renewMember: (id: string, plan: string, paidAmount: number, paymentMethod: string) => Promise<boolean>;
+  recordAttendance: (id: string) => Promise<boolean>;
+  recordPayment: (id: string, amount: number, detail: string, paymentMethod: string) => Promise<boolean>;
   notify: (message: string) => void;
   addMemberOpen: boolean;
   setAddMemberOpen: (open: boolean) => void;

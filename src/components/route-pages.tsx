@@ -7,13 +7,23 @@ import { SectionView } from "@/components/section-view";
 import { useGymApp } from "@/components/gym-app-context";
 
 export function OverviewPage() {
-  const { members, navigate, openMemberForm } = useGymApp();
-  return <DashboardView members={members} onNavigate={navigate} onAddMember={openMemberForm} />;
+  const { members, data, user, navigate, openMemberForm } = useGymApp();
+  return <DashboardView
+    members={members}
+    data={data}
+    onNavigate={navigate}
+    onAddMember={openMemberForm}
+    canAddMember={user.role === "owner" || user.permissions.includes("write:members")}
+    canReadMembers={user.role === "owner" || user.permissions.includes("read:members")}
+    canReadPayments={user.role === "owner" || user.permissions.includes("read:payments")}
+    canReadAttendance={user.role === "owner" || user.permissions.includes("read:attendance")}
+  />;
 }
 
 export function MembersPage() {
   const {
     members,
+    user,
     planPrices,
     addMember,
     deleteMember,
@@ -27,6 +37,8 @@ export function MembersPage() {
     <MembersView
       key={memberSearchQuery}
       members={members}
+      canWriteMembers={user.role === "owner" || user.permissions.includes("write:members")}
+      canRenewMembers={user.role === "owner" || (user.permissions.includes("write:members") && user.permissions.includes("write:payments"))}
       planPrices={planPrices}
       onAdd={addMember}
       onDelete={deleteMember}
@@ -39,6 +51,6 @@ export function MembersPage() {
 }
 
 export function GymSectionPage({ section }: { section: GymSection }) {
-  const { members, planPrices, updatePlanPrices, navigate, notify, recordAttendance, recordPayment } = useGymApp();
-  return <SectionView section={section} planPrices={planPrices} updatePlanPrices={updatePlanPrices} navigate={navigate} notify={notify} members={members} recordAttendance={recordAttendance} recordPayment={recordPayment} />;
+  const { members, data, user, planPrices, updatePlanPrices, addRecord, refreshData, navigate, notify, recordAttendance, recordPayment } = useGymApp();
+  return <SectionView section={section} data={data} user={user} planPrices={planPrices} updatePlanPrices={updatePlanPrices} addRecord={addRecord} refreshData={refreshData} navigate={navigate} notify={notify} members={members} recordAttendance={recordAttendance} recordPayment={recordPayment} />;
 }

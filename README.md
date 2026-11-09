@@ -1,5 +1,32 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Firebase setup
+
+The app uses Firebase Authentication for Google owner verification and username/password sessions, and Cloud Firestore through the Firebase Admin SDK for server-side data access. Firestore client access is denied by default; do not loosen these rules because the app's API enforces account, subscription, and role permissions.
+
+1. In Firebase project `gym-flow-928d9`, register a Web App and copy its API key and App ID.
+2. In **Authentication → Sign-in method**, enable Google and Email/Password.
+3. Create a service account with access to Firebase Authentication and Firestore. Keep its private key secret.
+4. Copy `.env.example` to `.env.local` and fill the Web App values plus `FIREBASE_CLIENT_EMAIL` and `FIREBASE_PRIVATE_KEY`. For a private key with newlines, use escaped `\n` sequences in the environment value.
+5. Add the same environment variables to the deployment provider. The `NEXT_PUBLIC_*` values are public Firebase Web App configuration; never expose the Admin service-account key.
+6. Deploy the locked Firestore rules with the Firebase CLI while authenticated to the intended project:
+
+   ```sh
+   firebase use gym-flow-928d9
+   firebase deploy --only firestore:rules
+   ```
+
+7. Install dependencies and run the app:
+
+   ```sh
+   npm install
+   npm run dev
+   ```
+
+New club registrations require Google verification and remain `pending` until the platform administrator activates them. Platform administration is restricted to `aamr222382@gmail.com`. Employees sign in with the username and password created by the club owner and receive only the selected permissions.
+
+The service-account credentials must be provisioned outside Git (for example, in the deployment provider's encrypted environment variables). Never commit `.env.local`, downloaded service-account JSON, or private keys.
+
 ## Getting Started
 
 First, run the development server:

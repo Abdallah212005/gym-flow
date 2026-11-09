@@ -15,6 +15,8 @@ export const metadata: Metadata = {
   description: "لوحة تحكم GymFlow لإدارة الأعضاء والاشتراكات والحضور.",
 };
 
+export const instant = false;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="ar" dir="rtl">

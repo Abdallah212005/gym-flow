@@ -6,11 +6,13 @@ import type { Member, MemberActivity } from "@/lib/gym-data";
 import { formatHistoryDate, formatHistoryTimestamp } from "@/lib/gym-data";
 import { Avatar, Button, EmptyState, Modal, PageHeading, StatusBadge } from "@/components/ui";
 
-type NewMember = Omit<Member, "id" | "membershipHistory" | "activityHistory">;
+type NewMember = Omit<Member, "id" | "membershipHistory" | "activityHistory" | "joinedAt" | "expiresAt" | "status" | "paid" | "initials" | "color">;
 
 export function MembersView({
   members,
   planPrices,
+  canWriteMembers,
+  canRenewMembers,
   onAdd,
   onDelete,
   onRenew,
@@ -20,26 +22,32 @@ export function MembersView({
 }: {
   members: Member[];
   planPrices: Record<string, number>;
-  onAdd: (member: NewMember) => void;
-  onDelete: (id: number) => void;
-  onRenew: (id: number, plan: string, paidAmount: number, paymentMethod: string) => void;
+  canWriteMembers: boolean;
+  canRenewMembers: boolean;
+  onAdd: (member: NewMember) => Promise<boolean>;
+  onDelete: (id: string) => void;
+  onRenew: (id: string, plan: string, paidAmount: number, paymentMethod: string) => Promise<boolean>;
   addOpen: boolean;
   onAddOpenChange: (open: boolean) => void;
   initialQuery: string;
 }) {
   const [query, setQuery] = useState(initialQuery);
   const [filter, setFilter] = useState("الكل");
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = members.find((member) => member.id === selectedId) ?? null;
   const [renewalOpen, setRenewalOpen] = useState(false);
-  const [renewalPlan, setRenewalPlan] = useState("اشتراك شهري");
-  const [renewalAmount, setRenewalAmount] = useState(String(planPrices["اشتراك شهري"] ?? 0));
+  const [renewalPlan, setRenewalPlan] = useState("");
+  const [renewalAmount, setRenewalAmount] = useState("");
   const [renewalMethod, setRenewalMethod] = useState("نقدي");
   const [historyFilter, setHistoryFilter] = useState<"all" | "membership" | "payment" | "attendance">("all");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [plan, setPlan] = useState("اشتراك شهري");
+  const [plan, setPlan] = useState("");
   const [formError, setFormError] = useState("");
+  const availablePlans = Object.keys(planPrices);
+  const selectedPlan = availablePlans.includes(plan) ? plan : availablePlans[0] ?? "";
+  const selectedRenewalPlan = availablePlans.includes(renewalPlan) ? renewalPlan : availablePlans[0] ?? "";
+  const selectedRenewalAmount = renewalAmount || String(planPrices[selectedRenewalPlan] ?? 0);
 
   const filteredMembers = useMemo(() => members.filter((member) => {
     const matchesQuery = `${member.name} ${member.phone}`.includes(query.trim());
@@ -47,7 +55,7 @@ export function MembersView({
     return matchesQuery && matchesFilter;
   }), [filter, members, query]);
 
-  function submitMember(event: FormEvent<HTMLFormElement>) {
+  async function submitMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (name.trim().length < 3) {
       setFormError("اكتب اسمًا كاملًا (٣ أحرف على الأقل).");
@@ -58,39 +66,33 @@ export function MembersView({
       return;
     }
 
-    const initials = name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("");
-    onAdd({
+    const saved = await onAdd({
       name: name.trim(),
       phone: phone.trim(),
-      plan,
-      joinedAt: "اليوم",
-      expiresAt: "٢٢ يوليو ٢٠٢٥",
-      status: "نشط",
-      paid: false,
-      initials,
-      color: "mint",
+      plan: selectedPlan,
     });
+    if (!saved) return;
     setName("");
     setPhone("");
-    setPlan("اشتراك شهري");
+    setPlan(availablePlans[0] ?? "");
     setFormError("");
     onAddOpenChange(false);
   }
 
   function openRenewal(member: Member) {
     setSelectedId(member.id);
-    setRenewalPlan(member.plan);
-    setRenewalAmount(String(planPrices[member.plan] ?? 0));
+    const selectedPlan = planPrices[member.plan] !== undefined ? member.plan : availablePlans[0] ?? "";
+    setRenewalPlan(selectedPlan);
+    setRenewalAmount(String(planPrices[selectedPlan] ?? 0));
     setRenewalMethod("نقدي");
     setRenewalOpen(true);
   }
 
-  function submitRenewal(event: FormEvent<HTMLFormElement>) {
+  async function submitRenewal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const paidAmount = Number(renewalAmount);
+    const paidAmount = Number(selectedRenewalAmount);
     if (!selected || !Number.isFinite(paidAmount) || paidAmount <= 0) return;
-    onRenew(selected.id, renewalPlan, paidAmount, renewalMethod);
-    setRenewalOpen(false);
+    if (await onRenew(selected.id, selectedRenewalPlan, paidAmount, renewalMethod)) setRenewalOpen(false);
   }
 
   function openMember(member: Member) {
@@ -108,14 +110,14 @@ export function MembersView({
         eyebrow="إدارة النادي"
         title="الأعضاء"
         description="تابع بيانات أعضائك واشتراكاتهم في مكان واحد."
-        action={<Button icon={<Plus size={17} />} onClick={() => onAddOpenChange(true)}>إضافة عضو</Button>}
+        action={canWriteMembers ? <Button icon={<Plus size={17} />} onClick={() => onAddOpenChange(true)}>إضافة عضو</Button> : undefined}
       />
       <div className="members-summary">
-        <div><span className="summary-dot summary-dot-active" /><strong>{members.filter((m) => m.status === "نشط").length + 118}</strong><span>عضو نشط</span></div>
+        <div><span className="summary-dot summary-dot-active" /><strong>{members.filter((m) => m.status === "نشط").length}</strong><span>عضو نشط</span></div>
         <i />
-        <div><span className="summary-dot summary-dot-warning" /><strong>{members.filter((m) => m.status === "قارب على الانتهاء").length + 8}</strong><span>قرب انتهاء اشتراكه</span></div>
+        <div><span className="summary-dot summary-dot-warning" /><strong>{members.filter((m) => m.status === "قارب على الانتهاء").length}</strong><span>قرب انتهاء اشتراكه</span></div>
         <i />
-        <div><span className="summary-dot summary-dot-muted" /><strong>{members.filter((m) => m.status === "منتهي").length + 4}</strong><span>اشتراك منتهي</span></div>
+        <div><span className="summary-dot summary-dot-muted" /><strong>{members.filter((m) => m.status === "منتهي").length}</strong><span>اشتراك منتهي</span></div>
       </div>
 
       <section className="panel member-table-panel">
@@ -136,7 +138,7 @@ export function MembersView({
               <tbody>
                 {filteredMembers.map((member) => (
                   <tr key={member.id} className="member-click-row" onClick={() => openMember(member)} onKeyDown={(event) => { if (event.key === "Enter") openMember(member); }} tabIndex={0} aria-label={`فتح سجل ${member.name}`}>
-                    <td><div className="member-cell"><Avatar initials={member.initials} color={member.color} /><div><button className="member-name-link" onClick={(event) => { event.stopPropagation(); openMember(member); }}><strong>{member.name}</strong></button><span>رقم العضو #{String(member.id + 1200).padStart(4, "0")}</span></div></div></td>
+                    <td><div className="member-cell"><Avatar initials={member.initials} color={member.color} /><div><button className="member-name-link" onClick={(event) => { event.stopPropagation(); openMember(member); }}><strong>{member.name}</strong></button><span>رقم العضو #{member.id.slice(0, 8)}</span></div></div></td>
                     <td className="phone-cell" dir="ltr">{member.phone}</td>
                     <td>{member.plan}</td>
                     <td>{member.joinedAt}</td>
@@ -144,11 +146,11 @@ export function MembersView({
                     <td><span className={`payment-status ${member.paid ? "payment-paid" : "payment-due"}`}><i />{member.paid ? "تم الدفع" : "مستحق"}</span></td>
                     <td><div className="row-actions">
                       <button aria-label={`عرض ${member.name}`} title="عرض الملف والسجل" onClick={(event) => { event.stopPropagation(); openMember(member); }}><Eye size={16} /></button>
-                      <button aria-label={`تجديد ${member.name}`} title="تجديد الاشتراك" onClick={(event) => { event.stopPropagation(); openRenewal(member); }}><Check size={16} /></button>
-                      <button aria-label={`حذف ${member.name}`} title="حذف العضو" onClick={(event) => {
+                      {canRenewMembers && availablePlans.length > 0 && <button aria-label={`تجديد ${member.name}`} title="تجديد الاشتراك" onClick={(event) => { event.stopPropagation(); openRenewal(member); }}><Check size={16} /></button>}
+                      {canWriteMembers && <button aria-label={`حذف ${member.name}`} title="حذف العضو" onClick={(event) => {
                         event.stopPropagation();
                         if (window.confirm(`هل تريد حذف العضو ${member.name}؟`)) onDelete(member.id);
-                      }}><Trash2 size={16} /></button>
+                      }}><Trash2 size={16} /></button>}
                     </div></td>
                   </tr>
                 ))}
@@ -159,19 +161,19 @@ export function MembersView({
         <div className="table-footer"><span>عرض {filteredMembers.length} من {members.length} عضو</span><div><button disabled>السابق</button><button className="current-page">١</button><button disabled>التالي</button></div></div>
       </section>
 
-      <Modal open={addOpen} title="إضافة عضو جديد" description="أدخل البيانات الأساسية لبدء ملف العضو." onClose={() => onAddOpenChange(false)}>
+      <Modal open={addOpen && canWriteMembers} title="إضافة عضو جديد" description="أدخل البيانات الأساسية لبدء ملف العضو." onClose={() => onAddOpenChange(false)}>
         <form className="form-grid" onSubmit={submitMember}>
           <label className="form-field form-field-wide"><span>الاسم بالكامل</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="مثال: أحمد محمد علي" /></label>
           <label className="form-field form-field-wide"><span>رقم الهاتف</span><input dir="ltr" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="01X XXXX XXXX" /></label>
-          <label className="form-field form-field-wide"><span>نوع الاشتراك</span><select value={plan} onChange={(event) => setPlan(event.target.value)}>{Object.keys(planPrices).map((planName) => <option key={planName}>{planName}</option>)}</select><small className="field-hint">السعر الحالي للخطة: {planPrices[plan]?.toLocaleString("ar-EG") ?? "—"} ج.م</small></label>
+          <label className="form-field form-field-wide"><span>نوع الاشتراك</span><select required disabled={!availablePlans.length} value={selectedPlan} onChange={(event) => setPlan(event.target.value)}>{availablePlans.map((planName) => <option key={planName}>{planName}</option>)}</select><small className="field-hint">{availablePlans.length ? `السعر الحالي للخطة: ${planPrices[selectedPlan]?.toLocaleString("ar-EG") ?? "—"} ج.م` : "أضف خطة اشتراك أولًا."}</small></label>
           {formError && <p className="form-error form-field-wide">{formError}</p>}
-          <div className="form-actions form-field-wide"><Button variant="secondary" type="button" onClick={() => onAddOpenChange(false)}>إلغاء</Button><Button type="submit">حفظ العضو</Button></div>
+          <div className="form-actions form-field-wide"><Button variant="secondary" type="button" onClick={() => onAddOpenChange(false)}>إلغاء</Button><Button type="submit" disabled={!availablePlans.length}>حفظ العضو</Button></div>
         </form>
       </Modal>
 
       <Modal open={Boolean(selected)} title="سجل العضو الكامل" description="الاشتراكات والتجديدات والمدفوعات والحضور في ملف واحد." className="member-history-modal" onClose={() => setSelectedId(null)}>
         {selected && <div className="member-profile">
-          <div className="profile-identity"><Avatar initials={selected.initials} color={selected.color} /><div><strong>{selected.name}</strong><span>عضو منذ {selected.joinedAt} · #{String(selected.id + 1200).padStart(4, "0")}</span></div><StatusBadge>{selected.status}</StatusBadge></div>
+          <div className="profile-identity"><Avatar initials={selected.initials} color={selected.color} /><div><strong>{selected.name}</strong><span>عضو منذ {selected.joinedAt} · #{selected.id.slice(0, 8)}</span></div><StatusBadge>{selected.status}</StatusBadge></div>
           <div className="profile-details">
             <div><span>رقم الهاتف</span><strong dir="ltr">{selected.phone}</strong></div>
             <div><span>الاشتراك الحالي</span><strong>{selected.plan}</strong></div>
@@ -203,12 +205,12 @@ export function MembersView({
         </div>}
       </Modal>
 
-      <Modal open={renewalOpen && Boolean(selected)} title="تجديد اشتراك العضو" description="التجديد يضيف فترة جديدة لنفس ملف العضو ويحافظ على سجل الفترات السابقة." className="renewal-modal" onClose={() => setRenewalOpen(false)}>
+      <Modal open={renewalOpen && canRenewMembers && Boolean(selected)} title="تجديد اشتراك العضو" description="التجديد يضيف فترة جديدة لنفس ملف العضو ويحافظ على سجل الفترات السابقة." className="renewal-modal" onClose={() => setRenewalOpen(false)}>
         {selected && <form className="form-grid" onSubmit={submitRenewal}>
           <div className="renewal-member form-field-wide"><Avatar initials={selected.initials} color={selected.color} /><div><strong>{selected.name}</strong><span>آخر اشتراك: {selected.plan} · ينتهي {selected.expiresAt}</span></div></div>
-          <label className="form-field form-field-wide"><span>الخطة الجديدة</span><select value={renewalPlan} onChange={(event) => { setRenewalPlan(event.target.value); setRenewalAmount(String(planPrices[event.target.value] ?? 0)); }}>{Object.keys(planPrices).map((planName) => <option key={planName}>{planName}</option>)}</select><small className="field-hint">الأسعار قابلة للتعديل من إعدادات النادي.</small></label>
+          <label className="form-field form-field-wide"><span>الخطة الجديدة</span><select required disabled={!availablePlans.length} value={selectedRenewalPlan} onChange={(event) => { setRenewalPlan(event.target.value); setRenewalAmount(String(planPrices[event.target.value] ?? 0)); }}>{availablePlans.map((planName) => <option key={planName}>{planName}</option>)}</select><small className="field-hint">{availablePlans.length ? "الأسعار قابلة للتعديل من إعدادات النادي." : "أضف خطة اشتراك أولًا."}</small></label>
           <div className="renewal-date-preview form-field-wide"><span><CalendarDays size={15} /> بداية الفترة الجديدة</span><strong>{getNextPeriodStart(selected)}</strong><small>تبدأ بعد انتهاء الفترة الحالية إذا كان الاشتراك ساريًا.</small></div>
-          <label className="form-field"><span>المبلغ المدفوع (ج.م)</span><input type="number" min="1" step="1" required value={renewalAmount} onChange={(event) => setRenewalAmount(event.target.value)} /></label>
+          <label className="form-field"><span>المبلغ المدفوع (ج.م)</span><input type="number" min="1" step="1" required value={selectedRenewalAmount} onChange={(event) => setRenewalAmount(event.target.value)} /></label>
           <label className="form-field"><span>طريقة الدفع</span><select value={renewalMethod} onChange={(event) => setRenewalMethod(event.target.value)}><option>نقدي</option><option>بطاقة داخل النادي</option><option>تحويل بنكي</option></select></label>
           <div className="form-actions form-field-wide"><Button variant="secondary" type="button" onClick={() => setRenewalOpen(false)}>إلغاء</Button><Button type="submit">تأكيد التجديد</Button></div>
         </form>}
