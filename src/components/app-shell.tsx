@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   Activity,
   Bell,
@@ -104,6 +105,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [data, setData] = useState<GymAppData>(emptyData);
   const [user, setUser] = useState<GymAppUser | null>(null);
   const [gym, setGym] = useState<GymAccount | null>(null);
+  const [supportMode, setSupportMode] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
@@ -147,29 +149,31 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [redirectTarget, router]);
 
   const refreshData = useCallback(async () => {
-    if (!user || (user.role !== "super_admin" && gym?.subscriptionStatus !== "active")) return;
+    if (!user || (!supportMode && user.role !== "super_admin" && gym?.subscriptionStatus !== "active")) return;
     if (user.role === "super_admin") return;
     const result = await loadGymData(user);
     setMembers(result.members);
     setData(result.data);
     setLoadError("");
-  }, [gym, user]);
+  }, [gym, supportMode, user]);
 
   useEffect(() => {
     let active = true;
     fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" })
       .then(async (response) => {
         if (response.status === 401) return null;
-        const result = await response.json() as { profile?: GymAppUser; gym?: GymAccount | null; error?: string };
-        if (!response.ok || !result.profile) throw new Error(result.error ?? "تعذر التحقق من الحساب.");
+        const result = await response.json() as { profile?: GymAppUser | null; gym?: GymAccount | null; supportMode?: boolean; error?: string };
+        if (!response.ok) throw new Error(result.error ?? "تعذر التحقق من الحساب.");
         return result;
       })
       .then((result) => {
         if (!active) return;
         setUser(result?.profile ?? null);
         setGym(result?.gym ?? null);
+        setSupportMode(result?.supportMode === true);
         const account = result?.gym;
-        if (result?.profile && result.profile.role !== "super_admin" && account && account.subscriptionStatus === "active") {
+        if (result?.profile && result.profile.role !== "super_admin" && account &&
+          (result.supportMode === true || account.subscriptionStatus === "active")) {
           loadGymData(result.profile)
             .then((loaded) => {
               if (!active) return;
@@ -203,6 +207,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   async function handleAuthenticated(profile: GymAppUser, account: GymAccount | null) {
     setUser(profile);
     setGym(account);
+    setSupportMode(false);
     setLoadError("");
     if (profile.role !== "super_admin" && account?.subscriptionStatus === "active") {
       try {
@@ -238,15 +243,43 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   async function logout() {
     try {
+      if (supportMode) {
+        const supportResponse = await fetch("/api/platform/support-session", { method: "DELETE", credentials: "same-origin" });
+        const supportResult = await supportResponse.json() as { error?: string };
+        if (!supportResponse.ok) throw new Error(supportResult.error ?? "تعذر إنهاء جلسة الدعم.");
+      }
       const response = await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
       if (!response.ok) throw new Error("تعذر تسجيل الخروج.");
       setUser(null);
       setGym(null);
+      setSupportMode(false);
       setMembers([]);
       setData(emptyData);
       router.replace("/");
     } catch (error) {
       notify(error instanceof Error ? error.message : "تعذر تسجيل الخروج.");
+    }
+  }
+
+  async function endSupportMode() {
+    try {
+      const response = await fetch("/api/platform/support-session", { method: "DELETE", credentials: "same-origin" });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "تعذر إنهاء جلسة الدعم.");
+      const sessionResponse = await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" });
+      const sessionResult = await sessionResponse.json() as { profile?: GymAppUser | null; error?: string };
+      if (!sessionResponse.ok || !sessionResult.profile) {
+        throw new Error(sessionResult.error ?? "تعذر استعادة جلسة إدارة المنصة.");
+      }
+      setUser(sessionResult.profile);
+      setGym(null);
+      setSupportMode(false);
+      setMembers([]);
+      setData(emptyData);
+      setLoadError("");
+      router.replace("/platform");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "تعذر إنهاء جلسة الدعم.");
     }
   }
 
@@ -352,7 +385,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (!user) {
     return <AuthGate onAuthenticated={handleAuthenticated} />;
   }
-  if (user.role !== "super_admin" && (!gym || gym.subscriptionStatus !== "active")) {
+  if (!supportMode && user.role !== "super_admin" && (!gym || gym.subscriptionStatus !== "active")) {
     const subscriptionMessage = !gym || gym.subscriptionStatus === "pending"
       ? "طلب تسجيل النادي قيد المراجعة. لن تتاح وظائف النظام حتى تفعيل الاشتراك."
       : gym.subscriptionStatus === "suspended"
@@ -361,7 +394,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return (
       <main className="auth-page">
         <section className="auth-card">
-          <div className="brand-row auth-brand"><span className="brand-mark">G</span><span className="brand-name">gym<span>flow</span></span></div>
+          <div className="brand-row auth-brand"><Image className="brand-mark" src="/gymflow-mark.svg" alt="" width={38} height={38} /><span className="brand-name">Gym<span>Flow</span></span></div>
           <p className="eyebrow">{gym?.name ?? "GymFlow"}</p>
           <h1>النادي غير مفعّل</h1>
           <p className="page-description">{subscriptionMessage}</p>
@@ -379,8 +412,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="app-shell">
         <aside className={`sidebar ${mobileMenuOpen ? "sidebar-open" : ""}`}>
           <div className="brand-row">
-            <span className="brand-mark"><Activity size={19} strokeWidth={2.2} /></span>
-            <span className="brand-name">gym<span>flow</span></span>
+            <Image className="brand-mark" src="/gymflow-mark.svg" alt="" width={38} height={38} />
+            <span className="brand-name">Gym<span>Flow</span></span>
             <IconButton className="mobile-close" label="إغلاق القائمة" onClick={() => setMobileMenuOpen(false)}><X size={18} /></IconButton>
           </div>
           {user.role !== "super_admin" && <button className="gym-switcher">
@@ -434,6 +467,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </header>
           {canSearchMembers && <div className="mobile-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") searchMembers(); }} placeholder="بحث سريع..." /></div>}
+          {supportMode && <div className="support-mode-banner" role="status">
+            <div><strong>وضع الدعم مفعّل · {gym?.name}</strong><span>تُسجّل التغييرات باسمك، وتنتهي الجلسة تلقائيًا بعد 4 ساعات.</span></div>
+            <button onClick={() => void endSupportMode()}>إنهاء جلسة الدعم</button>
+          </div>}
           {loadError && <div className="load-error-banner" role="alert"><span>{loadError}</span><button onClick={() => void refreshData().catch((error: unknown) => setLoadError(error instanceof Error ? error.message : "تعذر تحميل بيانات النادي."))}>إعادة المحاولة</button></div>}
           <div className="content-area">{children}</div>
         </main>

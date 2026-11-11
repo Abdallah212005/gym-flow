@@ -3,7 +3,9 @@ import type { DocumentData, DocumentSnapshot } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
 
 export const SESSION_COOKIE = "__session";
+export const SUPPORT_SESSION_COOKIE = "gymflow_support_session";
 export const SESSION_DURATION_MS = 5 * 24 * 60 * 60 * 1000;
+export const SUPPORT_SESSION_DURATION_MS = 4 * 60 * 60 * 1000;
 export const SUPER_ADMIN_EMAIL = "aamr222382@gmail.com";
 export const LOGIN_EMAIL_DOMAIN = "users.gymflow.app";
 
@@ -29,6 +31,13 @@ export type GymProfile = {
   subscriptionStartsAt: string | null;
   subscriptionEndsAt: string | null;
   createdAt: string;
+};
+
+export type SupportSession = {
+  id: string;
+  gymId: string;
+  adminUid: string;
+  adminEmail: string;
 };
 
 export class HttpError extends Error {
@@ -175,9 +184,85 @@ export async function requireUser(request: Request) {
   return { decoded, profile, gym };
 }
 
+function getCookieValue(request: Request, name: string) {
+  return request.headers.get("cookie")
+    ?.split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+}
+
+export async function getActiveSupportSession(request: Request, adminUid: string) {
+  const sessionId = getCookieValue(request, SUPPORT_SESSION_COOKIE);
+  if (!sessionId || !/^[a-f0-9-]{36}$/i.test(sessionId)) return null;
+  const snapshot = await getAdminDb().collection("supportSessions").doc(sessionId).get();
+  if (!snapshot.exists) return null;
+  const session = snapshot.data();
+  const expiresAt = typeof session?.expiresAt === "string" ? Date.parse(session.expiresAt) : Number.NaN;
+  if (
+    session?.active !== true ||
+    session.adminUid !== adminUid ||
+    typeof session.gymId !== "string" ||
+    typeof session.adminEmail !== "string" ||
+    !Number.isFinite(expiresAt) ||
+    expiresAt <= Date.now()
+  ) return null;
+  return {
+    id: snapshot.id,
+    gymId: session.gymId,
+    adminUid: session.adminUid,
+    adminEmail: session.adminEmail,
+  } satisfies SupportSession;
+}
+
+export async function recordSupportAudit(
+  session: SupportSession | null,
+  action: string,
+  details: Record<string, string | number | boolean | null> = {},
+) {
+  if (!session) return;
+  const db = getAdminDb();
+  const sessionRef = db.collection("supportSessions").doc(session.id);
+  const eventRef = sessionRef.collection("events").doc();
+  const now = new Date().toISOString();
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(sessionRef);
+    const expiresValue = snapshot.exists ? snapshot.get("expiresAt") : null;
+    const expiresAt = typeof expiresValue === "string" ? Date.parse(expiresValue) : Number.NaN;
+    if (!snapshot.exists || snapshot.get("active") !== true || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      throw new HttpError("انتهت جلسة الدعم. ابدأ جلسة جديدة للمتابعة.", 401);
+    }
+    transaction.create(eventRef, {
+      action,
+      details,
+      adminUid: session.adminUid,
+      adminEmail: session.adminEmail,
+      gymId: session.gymId,
+      createdAt: now,
+    });
+    transaction.update(sessionRef, { lastActivityAt: now });
+  });
+}
+
 export async function requireActiveGym(request: Request, permission?: string) {
   const session = await requireUser(request);
-  if (session.profile.role === "super_admin") return session;
+  if (session.profile.role === "super_admin") {
+    const supportSession = await getActiveSupportSession(request, session.decoded.uid);
+    if (!supportSession) throw new HttpError("ابدأ جلسة دعم لأحد الأندية من إدارة المنصة.", 403);
+    const gymSnapshot = await getAdminDb().collection("gyms").doc(supportSession.gymId).get();
+    if (!gymSnapshot.exists) throw new HttpError("بيانات النادي غير موجودة.", 404);
+    return {
+      ...session,
+      profile: {
+        ...session.profile,
+        gymId: supportSession.gymId,
+        role: "owner" as const,
+        permissions: ["*"],
+      },
+      gym: { ...gymSnapshot.data(), id: gymSnapshot.id } as GymProfile,
+      supportSession,
+    };
+  }
 
   const { gym } = session;
   if (!gym) throw new HttpError("الحساب غير مرتبط بنادٍ.", 403);
@@ -192,7 +277,7 @@ export async function requireActiveGym(request: Request, permission?: string) {
   if (permission && session.profile.role !== "owner" && !session.profile.permissions.includes(permission)) {
     throw new HttpError("ليس لديك صلاحية لتنفيذ هذا الإجراء.", 403);
   }
-  return session;
+  return { ...session, supportSession: null };
 }
 
 export function getDocumentData<T extends DocumentData>(snapshot: DocumentSnapshot<T>) {

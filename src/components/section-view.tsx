@@ -14,7 +14,7 @@ import {
   Wallet,
 } from "lucide-react";
 import type { GymAccount, GymAppData, GymAppUser, GymSection, Member } from "@/lib/gym-data";
-import { formatMoney } from "@/lib/gym-data";
+import { formatMoney, normalizePhoneNumber } from "@/lib/gym-data";
 import { Avatar, Button, EmptyState, Modal, PageHeading, StatusBadge } from "@/components/ui";
 
 type TableConfig = {
@@ -25,6 +25,23 @@ type TableConfig = {
   rows: string[][];
   summary: string;
   collection: keyof GymAppData;
+};
+
+type SupportAuditEvent = {
+  id: string;
+  action: string;
+  createdAt: string;
+  details: Record<string, string | number | boolean | null>;
+};
+
+type SupportAuditSession = {
+  id: string;
+  gymName: string;
+  adminEmail: string;
+  startedAt: string;
+  endedAt?: string;
+  active: boolean;
+  events: SupportAuditEvent[];
 };
 
 const tableConfigs: Partial<Record<GymSection, TableConfig>> = {
@@ -205,9 +222,9 @@ function TableSection({
 
     try {
     if (section === "attendance") {
-      const digits = person.replace(/\D/g, "");
+      const digits = normalizePhoneNumber(person);
       const member = members.find((candidate) =>
-        candidate.name.includes(person.trim()) || (digits.length > 0 && candidate.phone.replace(/\D/g, "").includes(digits)),
+        candidate.name.includes(person.trim()) || (digits.length > 0 && normalizePhoneNumber(candidate.phone).includes(digits)),
       );
       if (!member) {
         setError("لم نعثر على عضو بهذا الاسم أو الرقم.");
@@ -230,9 +247,9 @@ function TableSection({
       await addRecord("plans", { name: person.trim(), durationMonths, price, active: true });
     }
     else if (section === "payments") {
-      const digits = person.replace(/\D/g, "");
+      const digits = normalizePhoneNumber(person);
       const member = members.find((candidate) =>
-        candidate.name.includes(person.trim()) || (digits.length > 0 && candidate.phone.replace(/\D/g, "").includes(digits)),
+        candidate.name.includes(person.trim()) || (digits.length > 0 && normalizePhoneNumber(candidate.phone).includes(digits)),
       );
       const paymentAmount = Number(amount);
       if (!member) {
@@ -446,9 +463,12 @@ function SettingsView({
 
 function PlatformView({ notify }: { notify: (message: string) => void }) {
   const [gyms, setGyms] = useState<GymAccount[]>([]);
+  const [auditSessions, setAuditSessions] = useState<SupportAuditSession[]>([]);
   const [dateRanges, setDateRanges] = useState<Record<string, { startsAt: string; endsAt: string }>>({});
   const [error, setError] = useState("");
+  const [auditError, setAuditError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [openingGymId, setOpeningGymId] = useState("");
   const statusLabels: Record<GymAccount["subscriptionStatus"], string> = {
     pending: "قيد المراجعة",
     active: "نشط",
@@ -460,6 +480,12 @@ function PlatformView({ notify }: { notify: (message: string) => void }) {
     const result = await response.json() as { gyms?: GymAccount[]; error?: string };
     if (!response.ok) throw new Error(result.error ?? "تعذر تحميل الأندية.");
     return result.gyms ?? [];
+  }, []);
+  const fetchSupportAudit = useCallback(async () => {
+    const response = await fetch("/api/platform/support-session", { credentials: "same-origin", cache: "no-store" });
+    const result = await response.json() as { sessions?: SupportAuditSession[]; error?: string };
+    if (!response.ok) throw new Error(result.error ?? "تعذر تحميل سجل جلسات الدعم.");
+    return result.sessions ?? [];
   }, []);
   const applyGyms = useCallback((accounts: GymAccount[]) => {
     const { today, end } = getDefaultSubscriptionDates();
@@ -479,14 +505,25 @@ function PlatformView({ notify }: { notify: (message: string) => void }) {
       setLoading(false);
     }
   }, [applyGyms, fetchGyms]);
+  const loadSupportAudit = useCallback(async () => {
+    try {
+      setAuditSessions(await fetchSupportAudit());
+      setAuditError("");
+    } catch (loadError) {
+      setAuditError(loadError instanceof Error ? loadError.message : "تعذر تحميل سجل جلسات الدعم.");
+    }
+  }, [fetchSupportAudit]);
   useEffect(() => {
     let active = true;
     fetchGyms()
       .then((accounts) => { if (active) applyGyms(accounts); })
       .catch((loadError: unknown) => { if (active) setError(loadError instanceof Error ? loadError.message : "تعذر تحميل الأندية."); })
       .finally(() => { if (active) setLoading(false); });
+    fetchSupportAudit()
+      .then((sessions) => { if (active) { setAuditSessions(sessions); setAuditError(""); } })
+      .catch((loadError: unknown) => { if (active) setAuditError(loadError instanceof Error ? loadError.message : "تعذر تحميل سجل جلسات الدعم."); });
     return () => { active = false; };
-  }, [applyGyms, fetchGyms]);
+  }, [applyGyms, fetchGyms, fetchSupportAudit]);
 
   async function updateGym(gym: GymAccount, status: GymAccount["subscriptionStatus"]) {
     const dates = dateRanges[gym.id] ?? getDefaultSubscriptionDates();
@@ -506,6 +543,25 @@ function PlatformView({ notify }: { notify: (message: string) => void }) {
     }
   }
 
+  async function openGym(gym: GymAccount) {
+    setOpeningGymId(gym.id);
+    try {
+      const response = await fetch("/api/platform/support-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
+        body: JSON.stringify({ gymId: gym.id }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "تعذر فتح نظام النادي.");
+      window.location.reload();
+    } catch (openError) {
+      notify(openError instanceof Error ? openError.message : "تعذر فتح نظام النادي.");
+      setOpeningGymId("");
+    }
+  }
+
   return <div className="page-stack">
     <PageHeading eyebrow="مساحة المالك" title="إدارة المنصة" description="إدارة اشتراكات الأندية المسجلة على GymFlow." />
     <div className="owner-banner"><span className="owner-shield"><ShieldCheck size={18} /></span><div><strong>لوحة مالك المنصة</strong><span>التحكم في اشتراكات GymFlow منفصل تمامًا عن عضويات أعضاء النادي.</span></div><span className="owner-only">للمالك فقط</span></div>
@@ -513,7 +569,7 @@ function PlatformView({ notify }: { notify: (message: string) => void }) {
     <section className="panel member-table-panel">
       <div className="table-toolbar"><div className="table-title"><div><h2>حسابات الأندية</h2><span className="panel-subtitle">حدد فترة الاشتراك ثم فعّل النادي أو أوقفه.</span></div></div><button className="filter-select" onClick={() => void loadGyms()}>تحديث</button></div>
       {error && <p className="form-error">{error}</p>}
-      {loading ? <EmptyState title="جارٍ تحميل الأندية" description="يتم الاتصال بقاعدة البيانات." /> : !gyms.length ? <EmptyState title="لا توجد أندية بعد" description="ستظهر هنا الأندية التي تسجل عبر بوابة التسجيل." /> : <div className="table-scroll"><table className="data-table"><thead><tr><th>النادي</th><th>المالك</th><th>البريد</th><th>بداية الاشتراك</th><th>نهاية الاشتراك</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody>
+      {loading ? <EmptyState title="جارٍ تحميل الأندية" description="يتم الاتصال بقاعدة البيانات." /> : !gyms.length ? <EmptyState title="لا توجد أندية بعد" description="ستظهر هنا الأندية التي تسجل عبر بوابة التسجيل." /> : <div className="table-scroll"><table className="data-table"><thead><tr><th>النادي</th><th>المالك</th><th>البريد</th><th>بداية الاشتراك</th><th>نهاية الاشتراك</th><th>الحالة</th><th>إجراء</th><th>دخول الدعم</th></tr></thead><tbody>
         {gyms.map((gym) => <tr key={gym.id}>
           <td><div className="member-cell"><span className="gym-avatar"><Building2 size={16} /></span><strong>{gym.name}</strong></div></td>
           <td>{gym.ownerName}</td><td>{gym.ownerEmail}</td>
@@ -523,11 +579,63 @@ function PlatformView({ notify }: { notify: (message: string) => void }) {
           <td>{gym.subscriptionStatus === "active"
             ? <button className="owner-action" onClick={() => void updateGym(gym, "suspended")}>إيقاف</button>
             : <button className="owner-action" onClick={() => void updateGym(gym, "active")}>تفعيل الاشتراك</button>}</td>
+          <td><button className="owner-action" disabled={Boolean(openingGymId)} onClick={() => void openGym(gym)}>{openingGymId === gym.id ? "جارٍ الفتح..." : "فتح النظام"}</button></td>
         </tr>)}
       </tbody></table></div>}
       <div className="owner-table-note"><Wallet size={15} /> لا توجد مدفوعات تلقائية. تفعيل الاشتراك وتجديده يتم يدويًا بواسطة مالك المنصة.</div>
     </section>
+    <section className="panel member-table-panel">
+      <div className="table-toolbar"><div className="table-title"><div><h2>سجل جلسات الدعم</h2><span className="panel-subtitle">الدخول والتغييرات التي نفّذها مدير المنصة.</span></div></div><button className="filter-select" onClick={() => void loadSupportAudit()}>تحديث السجل</button></div>
+      {auditError && <p className="form-error">{auditError}</p>}
+      {!auditSessions.length ? <EmptyState title="لا توجد جلسات دعم مسجلة" description="ستظهر هنا جلسات فتح أنظمة الأندية." /> : <div className="table-scroll"><table className="data-table"><thead><tr><th>النادي</th><th>المسؤول</th><th>بداية الجلسة</th><th>نهاية الجلسة</th><th>الأحداث</th></tr></thead><tbody>
+        {auditSessions.map((session) => <tr key={session.id}>
+          <td>{session.gymName || "نادي غير معروف"}</td>
+          <td>{session.adminEmail}</td>
+          <td>{formatSupportDate(session.startedAt)}</td>
+          <td>{session.active ? "نشطة" : session.endedAt ? formatSupportDate(session.endedAt) : "منتهية"}</td>
+          <td><div className="support-audit-events">{session.events.map((event) => <span key={event.id}>
+            <strong>{supportActionLabel(event.action)}</strong>
+            <small>{formatSupportDate(event.createdAt)}{supportEventContext(event.details) ? ` · ${supportEventContext(event.details)}` : ""}</small>
+          </span>)}</div></td>
+        </tr>)}
+      </tbody></table></div>}
+    </section>
   </div>;
+}
+
+function formatSupportDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("ar-EG", { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
+function supportActionLabel(action: string) {
+  const labels: Record<string, string> = {
+    "session.start": "بدء الجلسة",
+    "session.end": "إنهاء الجلسة",
+    "data.create": "إضافة بيانات",
+    "data.update": "تعديل بيانات",
+    "data.delete": "حذف بيانات",
+    "member.create": "تسجيل عضو",
+    "member.delete": "حذف عضو",
+    "member.renew": "تجديد اشتراك",
+    "member.payment": "تسجيل دفعة",
+    "member.attendance": "تسجيل حضور",
+    "team.create": "إضافة حساب موظف",
+  };
+  return labels[action] ?? action;
+}
+
+function supportEventContext(details: SupportAuditEvent["details"]) {
+  return [
+    details.collection,
+    details.recordId ? `سجل ${details.recordId}` : null,
+    details.memberId ? `عضو ${details.memberId}` : null,
+    details.plan ? `الخطة ${details.plan}` : null,
+    details.paidAmount !== undefined ? `مدفوع ${formatMoney(Number(details.paidAmount))}` : null,
+    details.amount !== undefined ? `المبلغ ${formatMoney(Number(details.amount))}` : null,
+    details.fields,
+    details.reason,
+  ].filter((value): value is string => typeof value === "string").join(" · ");
 }
 
 function getDefaultSubscriptionDates() {

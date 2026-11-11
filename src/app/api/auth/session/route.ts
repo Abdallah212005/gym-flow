@@ -1,6 +1,7 @@
 import { getAdminDb } from "@/lib/firebase-admin";
 import {
   errorResponse,
+  getActiveSupportSession,
   getGoogleOwnerProfile,
   getProfile,
   getVerifiedSession,
@@ -17,9 +18,10 @@ export async function GET(request: Request) {
     ?.slice(SESSION_COOKIE.length + 1);
   try {
     const decoded = await getVerifiedSession(cookie);
-    if (!decoded) return Response.json({ error: "سجّل الدخول للمتابعة." }, { status: 401 });
+    if (!decoded) return Response.json({ profile: null, gym: null, supportMode: false });
 
-    const profile: GymAppUser | null = decoded.email?.toLowerCase() === SUPER_ADMIN_EMAIL
+    const isSuperAdmin = decoded.email?.toLowerCase() === SUPER_ADMIN_EMAIL;
+    const profile: GymAppUser | null = isSuperAdmin
       ? {
           uid: decoded.uid,
           email: SUPER_ADMIN_EMAIL,
@@ -29,7 +31,18 @@ export async function GET(request: Request) {
         }
       : await getProfile(decoded.uid) ?? await getGoogleOwnerProfile(decoded.uid);
     if (!profile) return Response.json({ error: "الحساب غير مرتبط بنادٍ." }, { status: 403 });
-    if (!profile.gymId) return Response.json({ profile, gym: null });
+    if (isSuperAdmin) {
+      const supportSession = await getActiveSupportSession(request, decoded.uid);
+      if (!supportSession) return Response.json({ profile, gym: null, supportMode: false });
+      const gymSnapshot = await getAdminDb().collection("gyms").doc(supportSession.gymId).get();
+      if (!gymSnapshot.exists) return Response.json({ error: "بيانات النادي غير موجودة." }, { status: 403 });
+      return Response.json({
+        profile: { ...profile, gymId: supportSession.gymId, role: "owner", permissions: ["*"] },
+        gym: { ...gymSnapshot.data(), id: gymSnapshot.id },
+        supportMode: true,
+      });
+    }
+    if (!profile.gymId) return Response.json({ profile, gym: null, supportMode: false });
 
     const gymSnapshot = await getAdminDb().collection("gyms").doc(profile.gymId).get();
     if (!gymSnapshot.exists) return Response.json({ error: "بيانات النادي غير موجودة." }, { status: 403 });
@@ -38,7 +51,7 @@ export async function GET(request: Request) {
       await gymSnapshot.ref.update({ subscriptionStatus: "expired" });
       gym.subscriptionStatus = "expired";
     }
-    return Response.json({ profile, gym });
+    return Response.json({ profile, gym, supportMode: false });
   } catch (error) {
     return errorResponse(error);
   }

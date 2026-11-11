@@ -36,6 +36,15 @@ export type Member = {
   updatedAt?: string;
 };
 
+export function normalizePhoneNumber(value: string) {
+  return value
+    .replace(/[٠-٩۰-۹]/g, (digit) => {
+      const codePoint = digit.charCodeAt(0);
+      return String(codePoint - (codePoint >= 0x06f0 ? 0x06f0 : 0x0660));
+    })
+    .replace(/\D/g, "");
+}
+
 export type GymRecord = {
   id: string;
   [key: string]: string | number | boolean | null | undefined;

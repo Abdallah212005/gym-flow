@@ -1,5 +1,5 @@
 import { getAdminDb } from "@/lib/firebase-admin";
-import { errorResponse, HttpError, requireActiveGym, requiredText } from "@/lib/server-auth";
+import { errorResponse, HttpError, recordSupportAudit, requireActiveGym, requiredText } from "@/lib/server-auth";
 
 const collections = ["plans", "attendance", "payments", "staff", "expenses", "reports"] as const;
 type DataCollection = typeof collections[number];
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { gym, profile } = await requireActiveGym(request);
+    const { gym, profile, supportSession } = await requireActiveGym(request);
     if (!gym) throw new HttpError("غير مصرح.", 403);
     const body = await request.json() as { collection?: unknown; data?: unknown };
     const collection = getCollection(typeof body.collection === "string" ? body.collection : null);
@@ -76,6 +76,11 @@ export async function POST(request: Request) {
       record.details = requiredText(values.details, "تفاصيل التقرير", 2000);
       record.status = "جديد";
     }
+    await recordSupportAudit(supportSession, "data.create", {
+      collection,
+      recordId: ref.id,
+      fields: Object.keys(values).join(", "),
+    });
     await ref.create(record);
     return Response.json({ record: { id: ref.id, ...record } }, { status: 201 });
   } catch (error) {
@@ -85,7 +90,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const { gym, profile } = await requireActiveGym(request);
+    const { gym, profile, supportSession } = await requireActiveGym(request);
     if (!gym) throw new HttpError("غير مصرح.", 403);
     const body = await request.json() as { collection?: unknown; id?: unknown; data?: unknown };
     const collection = getCollection(typeof body.collection === "string" ? body.collection : null);
@@ -120,6 +125,11 @@ export async function PATCH(request: Request) {
       }
     }
 
+    await recordSupportAudit(supportSession, "data.update", {
+      collection,
+      recordId: body.id,
+      fields: Object.keys(values).join(", "),
+    });
     await ref.update({ ...values, updatedAt: new Date().toISOString() });
     const updated = await ref.get();
     return Response.json({ record: { id: updated.id, ...updated.data() } });
@@ -133,7 +143,7 @@ export async function DELETE(request: Request) {
     const url = new URL(request.url);
     const collection = getCollection(url.searchParams.get("collection"));
     const id = url.searchParams.get("id");
-    const { gym, profile } = await requireActiveGym(request);
+    const { gym, profile, supportSession } = await requireActiveGym(request);
     if (!gym) throw new HttpError("غير مصرح.", 403);
     assertPermission(profile.role, profile.permissions, `write:${collection}`);
     if (!id) throw new HttpError("معرّف السجل مطلوب.", 400);
@@ -141,6 +151,7 @@ export async function DELETE(request: Request) {
     const ref = getAdminDb().collection("gyms").doc(gym.id).collection(collection).doc(id);
     const snapshot = await ref.get();
     if (!snapshot.exists) throw new HttpError("السجل غير موجود.", 404);
+    await recordSupportAudit(supportSession, "data.delete", { collection, recordId: id });
     await ref.delete();
     return Response.json({ deleted: true });
   } catch (error) {

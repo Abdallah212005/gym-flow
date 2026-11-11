@@ -1,7 +1,7 @@
 "use client";
 
-import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { X } from "lucide-react";
+import { useId, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { Check, X } from "lucide-react";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "quiet" | "danger";
@@ -76,6 +76,7 @@ export function Modal({
   className?: string;
   children: ReactNode;
 }) {
+  const titleId = useId();
   if (!open) return null;
 
   return (
@@ -84,12 +85,12 @@ export function Modal({
         className={`modal ${className}`}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-title"
+        aria-labelledby={titleId}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="modal-heading">
           <div>
-            <h2 id="modal-title">{title}</h2>
+            <h2 id={titleId}>{title}</h2>
             {description && <p>{description}</p>}
           </div>
           <IconButton label="إغلاق" onClick={onClose}><X size={18} /></IconButton>
@@ -101,12 +102,13 @@ export function Modal({
 }
 
 export function StatusBadge({ children }: { children: string }) {
+  const status = children.normalize("NFD").replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, "");
   const kind =
-    children === "نشط" || children === "تم الدفع" || children === "حاضر" || children === "مفعّل"
+    ["نشط", "تم الدفع", "حاضر", "مفعل"].includes(status)
       ? "success"
-      : children === "قارب على الانتهاء" || children === "معلّق" || children === "تجريبي"
+      : ["قارب على الانتهاء", "معلق", "تجريبي", "قيد المراجعة", "مستحق"].includes(status)
         ? "warning"
-        : children === "منتهي" || children === "متأخر" || children === "موقوف"
+        : ["منتهي", "متأخر", "موقوف", "موقف"].includes(status)
           ? "danger"
           : "neutral";
 
@@ -136,7 +138,7 @@ export function ToastMessage({
 }) {
   return (
     <div className="toast" role="status">
-      <span className="toast-check">✓</span>
+      <span className="toast-check"><Check size={16} aria-hidden="true" /></span>
       <span>{message}</span>
       <IconButton label="إغلاق الإشعار" onClick={onClose}><X size={15} /></IconButton>
     </div>

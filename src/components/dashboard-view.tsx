@@ -3,18 +3,21 @@
 import {
   ArrowDownLeft,
   ArrowUpLeft,
+  BadgeCheck,
   CalendarDays,
+  ChartNoAxesCombined,
   ChevronLeft,
-  Clock3,
   CreditCard,
-  Ellipsis,
   Plus,
   ScanLine,
-  UsersRound,
+  Trophy,
+  UserRound,
+  Wallet,
+  Zap,
 } from "lucide-react";
 import type { GymAppData, Member, GymSection } from "@/lib/gym-data";
 import { formatMoney } from "@/lib/gym-data";
-import { Avatar, Button, EmptyState, StatusBadge } from "@/components/ui";
+import { Avatar, EmptyState, StatusBadge } from "@/components/ui";
 
 export function DashboardView({
   members,
@@ -23,8 +26,10 @@ export function DashboardView({
   onAddMember,
   canAddMember,
   canReadMembers,
+  canReadMemberships,
   canReadPayments,
   canReadAttendance,
+  canReadReports,
 }: {
   members: Member[];
   data: GymAppData;
@@ -32,14 +37,12 @@ export function DashboardView({
   onAddMember: () => void;
   canAddMember: boolean;
   canReadMembers: boolean;
+  canReadMemberships: boolean;
   canReadPayments: boolean;
   canReadAttendance: boolean;
+  canReadReports: boolean;
 }) {
   const activeCount = members.filter((member) => member.status === "نشط").length;
-  const pendingAmount = members.reduce((total, member) => {
-    const period = member.membershipHistory.at(-1);
-    return total + Math.max((period?.price ?? 0) - (period?.paidAmount ?? 0), 0);
-  }, 0);
   const todayDate = new Date();
   const today = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, "0")}-${String(todayDate.getDate()).padStart(2, "0")}`;
   const todayAttendance = data.attendance.filter((entry) => String(entry.createdAt ?? "").startsWith(today));
@@ -59,88 +62,153 @@ export function DashboardView({
     };
   });
   const maxMonthlyRevenue = Math.max(1, ...monthlyRevenue.map((month) => month.value));
+  const totalRevenue = monthlyRevenue.reduce((total, month) => total + month.value, 0);
+  const pendingAmount = members.reduce((total, member) => {
+    const period = member.membershipHistory.at(-1);
+    return total + Math.max((period?.price ?? 0) - (period?.paidAmount ?? 0), 0);
+  }, 0);
+  const chartPoints = monthlyRevenue.map((month, index) => ({
+    x: monthlyRevenue.length > 1 ? 18 + index * (564 / (monthlyRevenue.length - 1)) : 300,
+    y: 170 - (month.value / maxMonthlyRevenue) * 132,
+  }));
+  const chartLine = chartPoints.reduce((path, point, index) => {
+    if (index === 0) return `M ${point.x} ${point.y}`;
+    const previous = chartPoints[index - 1];
+    const midpoint = (previous.x + point.x) / 2;
+    return `${path} C ${midpoint} ${previous.y}, ${midpoint} ${point.y}, ${point.x} ${point.y}`;
+  }, "");
+  const firstChartPoint = chartPoints[0];
+  const lastChartPoint = chartPoints[chartPoints.length - 1];
+  const chartArea = firstChartPoint && lastChartPoint ? `${chartLine} L ${lastChartPoint.x} 190 L ${firstChartPoint.x} 190 Z` : "";
+  const memberActivities = members.flatMap((member) =>
+    member.activityHistory
+      .filter((activity) =>
+        activity.type === "registration" ? canReadMembers
+          : activity.type === "membership" ? canReadMemberships
+            : activity.type === "payment" ? canReadPayments
+              : canReadAttendance,
+      )
+      .map((activity) => ({ ...activity, memberName: member.name })),
+  );
+  const collectionActivities = !canReadMembers
+    ? [
+        ...(canReadPayments ? data.payments.map((payment) => ({
+          id: String(payment.id ?? payment.createdAt ?? ""),
+          type: "payment" as const,
+          date: String(payment.createdAt ?? ""),
+          title: "تسجيل دفعة",
+          detail: String(payment.detail ?? ""),
+          memberName: String(payment.memberName ?? "عضو"),
+        })) : []),
+        ...(canReadAttendance ? data.attendance.map((entry) => ({
+          id: String(entry.id ?? entry.createdAt ?? ""),
+          type: "attendance" as const,
+          date: String(entry.createdAt ?? ""),
+          title: "تسجيل حضور",
+          detail: String(entry.method ?? ""),
+          memberName: String(entry.memberName ?? "عضو"),
+        })) : []),
+      ]
+    : [];
+  const recentActivities = [...memberActivities, ...collectionActivities]
+    .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
+    .slice(0, 4);
   const recentPayments = data.payments.slice(0, 3);
 
   return (
     <div className="page-stack">
-      <div className="demo-banner">
-        <span className="demo-indicator" />
-        <span>ملخص بيانات النادي المسجلة</span>
-      </div>
-
       <section className="dashboard-hero">
+        <div className="dashboard-hero-photo" aria-hidden="true" />
         <div className="hero-copy">
-          <h1>نظرة عامة</h1>
-          <p>ملخص سريع لأداء النادي اليوم.</p>
-          <div className="hero-actions">
-            {canAddMember && <Button icon={<Plus size={16} />} onClick={onAddMember}>عضو جديد</Button>}
-            {canReadAttendance && <button className="hero-link" onClick={() => onNavigate("attendance")}><ScanLine size={16} /> سجل الحضور <ArrowUpLeft size={14} /></button>}
-          </div>
+          <span className="hero-kicker">أهلاً بك في</span>
+          <h1><span>GymFlow</span></h1>
+          <p>إدارة أذكى .. لنمو أكبر لناديك</p>
         </div>
       </section>
 
       <section className="stats-grid" aria-label="ملخص النادي">
         <article className="stat-card">
-          <div className="stat-top"><span className="stat-icon stat-icon-green"><UsersRound size={18} /></span><span className="stat-label">الأعضاء النشطون</span><button aria-label="المزيد"><Ellipsis size={18} /></button></div>
-          <div className="stat-value">{formatMoney(activeCount)}<span className="stat-unit">عضو</span></div>
-          <div className="stat-foot"><span>إجمالي الأعضاء المسجلين</span></div>
-        </article>
-        <article className="stat-card">
-          <div className="stat-top"><span className="stat-icon stat-icon-blue"><CalendarDays size={18} /></span><span className="stat-label">حضور اليوم</span><button aria-label="المزيد"><Ellipsis size={18} /></button></div>
-          <div className="stat-value">{formatMoney(todayAttendance.length)}<span className="stat-unit">عضو</span></div>
-          <div className="stat-foot"><span>حالات الحضور المسجلة اليوم</span></div>
-        </article>
-        <article className="stat-card">
-          <div className="stat-top"><span className="stat-icon stat-icon-sand"><CreditCard size={18} /></span><span className="stat-label">إيرادات اليوم</span><button aria-label="المزيد"><Ellipsis size={18} /></button></div>
+          <div className="stat-icon stat-icon-green"><CreditCard size={21} /></div>
           <div className="stat-value">{formatMoney(todayRevenue)}<span className="stat-unit">ج.م</span></div>
-          <div className="stat-foot"><span>المدفوعات المسجلة اليوم</span></div>
+          <div className="stat-label">مبيعات اليوم</div>
         </article>
         <article className="stat-card">
-          <div className="stat-top"><span className="stat-icon stat-icon-rose"><Clock3 size={18} /></span><span className="stat-label">مستحقات معلّقة</span><button aria-label="المزيد"><Ellipsis size={18} /></button></div>
+          <div className="stat-icon stat-icon-blue"><ScanLine size={21} /></div>
+          <div className="stat-value">{formatMoney(todayAttendance.length)}<span className="stat-unit">عضو</span></div>
+          <div className="stat-label">حضور اليوم</div>
+        </article>
+        <article className="stat-card">
+          <div className="stat-icon stat-icon-sand"><BadgeCheck size={21} /></div>
+          <div className="stat-value">{formatMoney(activeCount)}<span className="stat-unit">عضو</span></div>
+          <div className="stat-label">الأعضاء النشطون</div>
+        </article>
+        <article className="stat-card">
+          <div className="stat-icon stat-icon-rose"><Wallet size={21} /></div>
           <div className="stat-value">{formatMoney(pendingAmount)}<span className="stat-unit">ج.م</span></div>
-          <div className="stat-foot"><span className="stat-foot-alert">{members.filter((member) => !member.paid).length} أعضاء</span><span>بحاجة إلى متابعة</span></div>
+          <div className="stat-label">مستحقات معلّقة</div>
         </article>
       </section>
 
-      <section className="dashboard-grid">
+      <section className="dashboard-grid dashboard-overview-grid">
+        {canReadMembers || canReadMemberships || canReadPayments || canReadAttendance ? <article className="panel activity-panel">
+          <div className="panel-heading">
+            <div><h2>أحدث الأنشطة</h2><p>آخر التحديثات في ناديك</p></div>
+            <Zap size={19} className="activity-heading-icon" />
+          </div>
+          <div className="activity-list">
+            {recentActivities.map((activity) => {
+              const ActivityIcon = activity.type === "registration" ? UserRound
+                : activity.type === "membership" ? CalendarDays
+                  : activity.type === "payment" ? CreditCard
+                    : ScanLine;
+              return (
+                <div className="activity-row" key={activity.id}>
+                  <span className={`activity-icon activity-icon-${activity.type}`}><ActivityIcon size={16} /></span>
+                  <div className="activity-copy"><strong>{activity.title}</strong><span>{activity.memberName}</span></div>
+                  <time dateTime={activity.date}>{new Intl.DateTimeFormat("ar-EG", { day: "numeric", month: "short" }).format(new Date(activity.date))}</time>
+                </div>
+              );
+            })}
+            {!recentActivities.length && <EmptyState title="لا توجد أنشطة بعد" description="ستظهر هنا أحدث تحديثات النادي." />}
+          </div>
+        </article> : null}
+
         <article className="panel revenue-panel">
           <div className="panel-heading">
-            <div><h2>نظرة على الإيرادات</h2><p>المدفوعات المسجلة خلال آخر ٦ أشهر</p></div>
-            <button className="select-button">هذا العام <ChevronLeft size={14} /></button>
+            <div><h2><ChartNoAxesCombined size={17} /> الإيرادات خلال آخر ٦ أشهر</h2></div>
+            <span className="chart-period">آخر ٦ أشهر <ChevronLeft size={14} /></span>
           </div>
-          <div className="revenue-summary"><strong>{formatMoney(monthlyRevenue.reduce((total, month) => total + month.value, 0))} <small>ج.م</small></strong><span className="summary-caption">آخر ٦ أشهر</span></div>
+          <div className="revenue-summary"><strong>{formatMoney(totalRevenue)} <small>ج.م</small></strong></div>
           <div className="chart" role="img" aria-label="رسم بياني للإيرادات خلال آخر ستة أشهر">
-            <div className="chart-scale"><span>{formatMoney(maxMonthlyRevenue)} ج.م</span><span>{formatMoney(Math.round(maxMonthlyRevenue * 2 / 3))}</span><span>{formatMoney(Math.round(maxMonthlyRevenue / 3))}</span><span>٠</span></div>
-            <div className="chart-area">
-              <div className="chart-lines"><i /><i /><i /><i /></div>
-              <div className="chart-bars">
-                {monthlyRevenue.map((month, index) => (
-                  <div className="chart-column" key={month.label}>
-                    <span className={`chart-bar ${index === 5 ? "chart-bar-current" : ""}`} style={{ height: `${Math.max(month.value ? (month.value / maxMonthlyRevenue) * 100 : 0, month.value ? 8 : 0)}%` }} />
-                    <span className="chart-label">{month.label}</span>
-                  </div>
-                ))}
-              </div>
+            <svg className="revenue-chart-svg" viewBox="0 0 600 220" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <linearGradient id="revenue-fill" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor="var(--ds-lime-400)" stopOpacity=".38" />
+                  <stop offset="100%" stopColor="var(--ds-lime-400)" stopOpacity=".03" />
+                </linearGradient>
+              </defs>
+              {[36, 78, 120, 162, 190].map((y) => <line key={y} x1="16" x2="584" y1={y} y2={y} className="revenue-chart-gridline" />)}
+              {chartArea && <path d={chartArea} fill="url(#revenue-fill)" />}
+              {chartLine && <path d={chartLine} className="revenue-chart-line" />}
+              {chartPoints.map((point, index) => <circle key={monthlyRevenue[index].label} cx={point.x} cy={point.y} r="5" className={`revenue-chart-point ${index === chartPoints.length - 1 ? "revenue-chart-point-current" : ""}`} />)}
+            </svg>
+            <div className="chart-labels" aria-hidden="true">
+              {monthlyRevenue.map((month) => <span key={month.label}>{month.label}</span>)}
             </div>
           </div>
           {!data.payments.length && <p className="dashboard-empty-note">ستظهر الإيرادات بعد تسجيل أول دفعة.</p>}
         </article>
 
-        {canReadAttendance && <article className="panel attendance-panel">
-          <div className="panel-heading">
-            <div><h2>حضور اليوم</h2><p>{new Intl.DateTimeFormat("ar-EG", { dateStyle: "long" }).format(new Date())}</p></div>
-            <button className="icon-quiet" aria-label="خيارات"><Ellipsis size={19} /></button>
+        <article className="promo-card">
+          <div className="promo-card-copy">
+            <Trophy size={29} />
+            <h2>نادي أقوى<br />بإدارة أذكى</h2>
+            <div className="promo-card-actions">
+              {canReadReports && <button onClick={() => onNavigate("reports")}>عرض التقارير <ArrowUpLeft size={14} /></button>}
+              {!canReadReports && canAddMember && <button onClick={onAddMember}>إضافة عضو <Plus size={14} /></button>}
+            </div>
           </div>
-          <div className="attendance-total"><strong>{formatMoney(todayAttendance.length)}</strong><span>عضو سجّلوا حضورهم اليوم</span></div>
-          <div className="attendance-progress"><span style={{ width: `${activeCount ? Math.min((todayAttendance.length / activeCount) * 100, 100) : 0}%` }} /></div>
-          <div className="attendance-meta"><span>من أصل {formatMoney(activeCount)} عضو نشط</span><strong>{activeCount ? `${Math.round((todayAttendance.length / activeCount) * 100)}٪` : "٠٪"}</strong></div>
-          <div className="mini-divider" />
-          <div className="attendance-split">
-            <div><span className="dot dot-green" /><span>دخول يدوي</span><strong>{formatMoney(todayAttendance.filter((entry) => entry.method === "يدوي").length)}</strong></div>
-            <div><span className="dot dot-blue" /><span>إجمالي الحضور</span><strong>{formatMoney(todayAttendance.length)}</strong></div>
-          </div>
-          <Button variant="secondary" className="full-button" onClick={() => onNavigate("attendance")}>عرض سجل الحضور <ArrowUpLeft size={15} /></Button>
-        </article>}
+        </article>
       </section>
 
       <section className="dashboard-grid lower-grid">

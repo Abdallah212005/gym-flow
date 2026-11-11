@@ -15,8 +15,10 @@ export function OverviewPage() {
     onAddMember={openMemberForm}
     canAddMember={user.role === "owner" || user.permissions.includes("write:members")}
     canReadMembers={user.role === "owner" || user.permissions.includes("read:members")}
+    canReadMemberships={user.role === "owner" || user.permissions.includes("read:plans")}
     canReadPayments={user.role === "owner" || user.permissions.includes("read:payments")}
     canReadAttendance={user.role === "owner" || user.permissions.includes("read:attendance")}
+    canReadReports={user.role === "owner" || (user.permissions.includes("read:reports") && ["members", "attendance", "payments", "expenses"].every((name) => user.permissions.includes(`read:${name}`)))}
   />;
 }
 
@@ -31,6 +33,8 @@ export function MembersPage() {
     addMemberOpen,
     setAddMemberOpen,
     memberSearchQuery,
+    recordPayment,
+    notify,
   } = useGymApp();
 
   return (
@@ -38,11 +42,14 @@ export function MembersPage() {
       key={memberSearchQuery}
       members={members}
       canWriteMembers={user.role === "owner" || user.permissions.includes("write:members")}
+      canWritePayments={user.role === "owner" || user.permissions.includes("write:payments")}
       canRenewMembers={user.role === "owner" || (user.permissions.includes("write:members") && user.permissions.includes("write:payments"))}
       planPrices={planPrices}
       onAdd={addMember}
       onDelete={deleteMember}
       onRenew={renewMember}
+      onRecordPayment={recordPayment}
+      notify={notify}
       addOpen={addMemberOpen}
       onAddOpenChange={setAddMemberOpen}
       initialQuery={memberSearchQuery}

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { ArrowRight, Dumbbell, LockKeyhole, ShieldCheck, UserRound } from "lucide-react";
+import Image from "next/image";
+import { ArrowRight, LockKeyhole, ShieldCheck, UserRound } from "lucide-react";
 import { GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 import { getFirebaseClientAuth, isFirebaseClientConfigured } from "@/lib/firebase-client";
 import type { GymAccount, GymAppUser } from "@/lib/gym-data";
@@ -30,7 +31,7 @@ async function postJson(path: string, body: Record<string, unknown>) {
 
 async function loadSession() {
   const response = await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" });
-  const data = await response.json() as { profile?: GymAppUser; gym?: GymAccount | null; error?: string };
+  const data = await response.json() as { profile?: GymAppUser | null; gym?: GymAccount | null; error?: string };
   if (!response.ok || !data.profile) throw new Error(data.error ?? "تعذر تحميل بيانات الحساب.");
   return data;
 }
@@ -134,7 +135,7 @@ export function AuthGate({ onAuthenticated }: Props) {
       <section className="auth-layout">
         <aside className="auth-aside">
           <div className="auth-aside-brand">
-            <span className="auth-brand-mark"><Dumbbell size={19} /></span>
+            <Image className="auth-brand-mark" src="/gymflow-mark.svg" alt="" width={38} height={38} />
             <span>Gym<span>Flow</span></span>
           </div>
           <div className="auth-aside-copy">
@@ -151,7 +152,7 @@ export function AuthGate({ onAuthenticated }: Props) {
 
         <section className="auth-panel" aria-live="polite">
           <div className="auth-mobile-brand">
-            <span className="auth-brand-mark"><Dumbbell size={18} /></span>
+            <Image className="auth-brand-mark" src="/gymflow-mark.svg" alt="" width={38} height={38} />
             <span>Gym<span>Flow</span></span>
           </div>
 

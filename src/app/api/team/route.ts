@@ -4,6 +4,7 @@ import {
   HttpError,
   LOGIN_EMAIL_DOMAIN,
   normalizeUsername,
+  recordSupportAudit,
   requireActiveGym,
   requiredText,
 } from "@/lib/server-auth";
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   let createdUid: string | undefined;
   try {
-    const { gym, profile } = await requireActiveGym(request, "manage:team");
+    const { gym, profile, supportSession } = await requireActiveGym(request, "manage:team");
     if (!gym || profile.role !== "owner") throw new HttpError("إدارة الموظفين متاحة لمالك النادي فقط.", 403);
     const body = await request.json() as {
       username?: unknown;
@@ -66,6 +67,7 @@ export async function POST(request: Request) {
     }
     if (role === "manager" && body.permissions.length === 0) throw new HttpError("اختر صلاحية واحدة على الأقل للمدير.", 400);
 
+    await recordSupportAudit(supportSession, "team.create", { role });
     const auth = getAdminAuth();
     const db = getAdminDb();
     const usernameRef = db.collection("usernames").doc(username);
