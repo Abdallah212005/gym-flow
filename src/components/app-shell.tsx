@@ -162,7 +162,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" })
       .then(async (response) => {
         if (response.status === 401) return null;
-        const result = await response.json() as { profile?: GymAppUser | null; gym?: GymAccount | null; supportMode?: boolean; error?: string };
+        const result = await response.json().catch(() => null) as { profile?: GymAppUser | null; gym?: GymAccount | null; supportMode?: boolean; error?: string } | null;
+        if (!result) {
+          throw new Error(`تعذر التحقق من الحساب (HTTP ${response.status}). أعد نشر آخر نسخة من GitHub على Vercel.`);
+        }
         if (!response.ok) throw new Error(result.error ?? "تعذر التحقق من الحساب.");
         return result;
       })

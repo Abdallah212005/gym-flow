@@ -2,6 +2,9 @@
   "name": "gymflow",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -13,7 +16,7 @@
   },
   "dependencies": {
     "firebase": "^13.2.0",
-    "firebase-admin": "^14.5.0",
+    "firebase-admin": "^13.10.0",
     "lucide-react": "^0.468.0",
     "next": "16.4.5",
     "react": "19.3.0",
