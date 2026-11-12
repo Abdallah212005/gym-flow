@@ -1,34 +1,22 @@
-import {
-  createSessionResponse,
-  errorResponse,
-  getGoogleOwnerProfile,
-  SUPER_ADMIN_EMAIL,
-  verifyGoogleIdToken,
-} from "@/lib/server-auth";
+import { getSupabaseServerClient } from "@/lib/supabase";
+import { connection } from "next/server";
 
-export async function POST(request: Request) {
+export async function GET(request: Request) {
+  await connection();
   try {
-    const body = await request.json() as { idToken?: unknown };
-    const idToken = body.idToken;
-    const decoded = await verifyGoogleIdToken(idToken);
-    if (decoded.email?.toLowerCase() === SUPER_ADMIN_EMAIL) {
-      if (typeof idToken !== "string") return Response.json({ error: "تعذر التحقق من حساب Google." }, { status: 401 });
-      return createSessionResponse(idToken, {
-        uid: decoded.uid,
-        email: SUPER_ADMIN_EMAIL,
-        displayName: decoded.name ?? "Super Admin",
-        role: "super_admin",
-        permissions: ["*"],
-      });
-    }
-
-    const profile = await getGoogleOwnerProfile(decoded.uid);
-    if (profile) {
-      if (typeof idToken !== "string") return Response.json({ error: "تعذر التحقق من حساب Google." }, { status: 401 });
-      return createSessionResponse(idToken, profile);
-    }
-    return Response.json({ registrationRequired: true });
+    const supabase = await getSupabaseServerClient();
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: new URL("/api/auth/callback", request.url).toString(),
+        queryParams: { prompt: "select_account" },
+      },
+    });
+    if (error) throw error;
+    if (!data.url) throw new Error("Supabase did not return a Google OAuth URL.");
+    return Response.redirect(data.url);
   } catch (error) {
-    return errorResponse(error);
+    console.error("GymFlow Google OAuth initialization failed:", error);
+    return Response.redirect(new URL("/?authError=google", request.url));
   }
 }

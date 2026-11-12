@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Image from "next/image";
 import { ArrowRight, LockKeyhole, ShieldCheck, UserRound } from "lucide-react";
-import { GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
-import { getFirebaseClientAuth, isFirebaseClientConfigured } from "@/lib/firebase-client";
 import type { GymAccount, GymAppUser } from "@/lib/gym-data";
 import { Button } from "@/components/ui";
+
+const isSupabaseConfigured = Boolean(
+  process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+);
 
 type Props = {
   onAuthenticated: (profile: GymAppUser, gym: GymAccount | null) => Promise<void>;
@@ -36,22 +38,8 @@ async function loadSession() {
   return data;
 }
 
-function googleSignInError(reason: unknown) {
-  const code = typeof reason === "object" && reason !== null && "code" in reason
-    ? String(reason.code)
-    : "";
-  if (code === "auth/popup-closed-by-user") {
-    return "اتقفلت نافذة Google قبل ما الدخول يكتمل. اضغط تاني، اختار حسابك، وسيب النافذة مفتوحة لحد ما يرجعك للنظام.";
-  }
-  if (code === "auth/popup-blocked") {
-    return "المتصفح منع نافذة Google. اسمح بالنوافذ المنبثقة للموقع وحاول تاني.";
-  }
-  return reason instanceof Error ? reason.message : "تعذر الدخول بحساب Google.";
-}
-
 export function AuthGate({ onAuthenticated }: Props) {
   const [mode, setMode] = useState<"owner" | "employee" | "register">("owner");
-  const [idToken, setIdToken] = useState("");
   const [googleEmail, setGoogleEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -61,6 +49,30 @@ export function AuthGate({ onAuthenticated }: Props) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    const hasAuthError = new URLSearchParams(window.location.search).has("authError");
+    if (hasAuthError) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json() as {
+          registrationRequired?: boolean;
+          email?: string;
+          displayName?: string;
+        };
+        if (hasAuthError) {
+          setError("تعذر تسجيل الدخول باستخدام Google. تحقق من إعدادات Supabase Auth وحاول مرة أخرى.");
+        }
+        if (response.ok && data.registrationRequired) {
+          setGoogleEmail(data.email ?? "");
+          setOwnerName(data.displayName ?? "");
+          setMode("register");
+        }
+      })
+      .catch(() => setError("تعذر التحقق من جلسة الدخول. أعد المحاولة."));
+  }, []);
+
   function showMode(nextMode: typeof mode) {
     setMode(nextMode);
     setError("");
@@ -68,33 +80,14 @@ export function AuthGate({ onAuthenticated }: Props) {
   }
 
   async function googleSignIn() {
-    setBusy(true);
     setError("");
     setNotice("");
-    try {
-      if (!isFirebaseClientConfigured()) throw new Error("الدخول غير متاح حاليًا. حاول مرة أخرى لاحقًا.");
-      const auth = getFirebaseClientAuth();
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: "select_account" });
-      const result = await signInWithPopup(auth, provider);
-      const token = await result.user.getIdToken();
-      const response = await postJson("/api/auth/google", { idToken: token });
-      if (response.registrationRequired) {
-        setIdToken(token);
-        setGoogleEmail(result.user.email ?? "");
-        setOwnerName(result.user.displayName ?? "");
-        setMode("register");
-        return;
-      }
-
-      await signOut(auth);
-      const session = await loadSession();
-      await onAuthenticated(session.profile!, session.gym ?? null);
-    } catch (reason) {
-      setError(googleSignInError(reason));
-    } finally {
-      setBusy(false);
+    if (!isSupabaseConfigured) {
+      setError("الدخول غير متاح حاليًا. تحقق من إعدادات Supabase.");
+      return;
     }
+    setBusy(true);
+    window.location.assign(new URL("/api/auth/google", window.location.href).toString());
   }
 
   async function employeeLogin(event: FormEvent<HTMLFormElement>) {
@@ -118,10 +111,8 @@ export function AuthGate({ onAuthenticated }: Props) {
     setBusy(true);
     setError("");
     try {
-      await postJson("/api/auth/register", { idToken, username, password, gymName, ownerName });
-      await postJson("/api/auth/google", { idToken });
+      await postJson("/api/auth/register", { username, password, gymName, ownerName });
       const session = await loadSession();
-      await signOut(getFirebaseClientAuth());
       await onAuthenticated(session.profile!, session.gym ?? null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "تعذر تسجيل النادي.");
@@ -160,9 +151,9 @@ export function AuthGate({ onAuthenticated }: Props) {
             <span className="auth-step">دخول مالك النادي</span>
             <h1>أهلاً بعودتك</h1>
             <p className="auth-description">ادخل بحساب Google المرتبط بناديك.</p>
-            <Button className="auth-primary auth-google-button" onClick={googleSignIn} disabled={busy || !isFirebaseClientConfigured()}>
+            <Button className="auth-primary auth-google-button" onClick={googleSignIn} disabled={busy || !isSupabaseConfigured}>
               <GoogleMark />
-              <span>{busy ? "جارٍ التحقق..." : "الدخول باستخدام Google"}</span>
+              <span>{busy ? "جارٍ التحويل..." : "الدخول باستخدام Google"}</span>
             </Button>
             <p className="auth-caption"><LockKeyhole size={13} /> دخول آمن إلى مساحة ناديك</p>
             <div className="auth-separator"><span>أول مرة هنا؟</span></div>
@@ -185,11 +176,11 @@ export function AuthGate({ onAuthenticated }: Props) {
           </>}
 
           {mode === "register" && <>
-            <button className="auth-back" onClick={() => { showMode("owner"); setIdToken(""); }}><ArrowRight size={15} /> العودة</button>
+            <button className="auth-back" onClick={() => showMode("owner")}><ArrowRight size={15} /> العودة</button>
             <span className="auth-step">حساب جديد</span>
-            <h1>{idToken ? "كمّل تسجيل ناديك" : "ابدأ مع GymFlow"}</h1>
-            <p className="auth-description">{idToken ? "بيانات ناديك وحساب الإدارة." : "تحقق من حساب Google للبدء."}</p>
-            {idToken ? (
+            <h1>{googleEmail ? "كمّل تسجيل ناديك" : "ابدأ مع GymFlow"}</h1>
+            <p className="auth-description">{googleEmail ? "بيانات ناديك وحساب الإدارة." : "تحقق من حساب Google للبدء."}</p>
+            {googleEmail ? (
               <>
                 {googleEmail && <div className="auth-google-account"><GoogleMark /><span><small>حساب Google</small><strong dir="ltr">{googleEmail}</strong></span></div>}
                 <form className="auth-form" onSubmit={register}>
@@ -203,9 +194,9 @@ export function AuthGate({ onAuthenticated }: Props) {
                 <p className="auth-caption"><ShieldCheck size={13} /> يُفعّل النادي بعد مراجعة الاشتراك</p>
               </>
             ) : <>
-              <Button className="auth-primary auth-google-button" onClick={googleSignIn} disabled={busy || !isFirebaseClientConfigured()}>
+              <Button className="auth-primary auth-google-button" onClick={googleSignIn} disabled={busy || !isSupabaseConfigured}>
                 <GoogleMark />
-                <span>{busy ? "جارٍ التحقق..." : "المتابعة باستخدام Google"}</span>
+                <span>{busy ? "جارٍ التحويل..." : "المتابعة باستخدام Google"}</span>
               </Button>
               {error && <p className="auth-error" role="alert">{error}</p>}
               <button className="auth-employee-link" onClick={() => showMode("owner")}>لديك حساب؟ تسجيل الدخول</button>
@@ -213,7 +204,7 @@ export function AuthGate({ onAuthenticated }: Props) {
           </>}
           {error && mode !== "employee" && <p className="auth-error" role="alert">{error}</p>}
           {notice && <p className="auth-notice" role="status">{notice}</p>}
-          {!isFirebaseClientConfigured() && mode !== "employee" && <p className="auth-error" role="status">الدخول باستخدام Google غير متاح حاليًا.</p>}
+          {!isSupabaseConfigured && mode !== "employee" && <p className="auth-error" role="status">الدخول باستخدام Google غير متاح حاليًا.</p>}
         </section>
       </section>
     </main>

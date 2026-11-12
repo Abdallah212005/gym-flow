@@ -1,5 +1,5 @@
 Front-end : tech-stack (React.js  / next.js)
-Back-end : teck-stack (node.js / json / Firebase)
+Back-end : tech-stack (Next.js API routes / Supabase Auth / PostgreSQL)
 Deployment : Vercel 
 
 
@@ -13,13 +13,13 @@ Build a complete, polished Gym Management SaaS application called **GymFlow**.
 
 - Build the frontend with React.js using Next.js.
 - Use Node.js for backend/server-side functionality, including Next.js server routes or API endpoints where appropriate.
-- Use Firebase Authentication for sign-in and Firebase Firestore for persistent application data.
+- Use Supabase Auth for sign-in and Supabase PostgreSQL for persistent application data.
 - Use JSON for data exchanged between the frontend and backend endpoints.
-- Deploy the application on Vercel and configure the required Firebase connection securely.
+- Deploy the application on Vercel and configure Supabase credentials securely.
 - No payment gateway.
-- Do not use third-party APIs other than the required Firebase services.
+- Do not use third-party APIs other than the required Supabase services.
 - Do not store sensitive credentials or rely on client-side UI checks as the only authorization.
-- Use Firebase/Firestore for persistent application data; reserve LocalStorage for non-sensitive UI preferences only.
+- Use Supabase for persistent application data; reserve LocalStorage for non-sensitive UI preferences only.
 - Include realistic initial/seed data for development and demonstration.
 - The application must run through the Next.js development server and be deployable to Vercel.
 
@@ -187,7 +187,7 @@ Features:
 - Monthly revenue.
 - Refund and adjustment records.
 
-Persist financial records in Firebase and make it clear when any displayed figures are sample/demo data.
+Persist financial records in Supabase and make it clear when any displayed figures are sample/demo data.
 
 ## 9. Trainers and Staff
 
@@ -337,7 +337,7 @@ Never mix these two systems.
 
 ## 14. Authentication and Role-Based Access
 
-Implement authentication with Firebase Authentication and enforce role-based access in both the interface and protected server-side operations.
+Implement authentication with Supabase Auth and enforce role-based access in both the interface and protected server-side operations.
 
 Support these roles:
 
@@ -361,7 +361,7 @@ Do not present authentication as a local simulation or rely on hiding controls i
 - All tables must support search and filtering.
 - Use confirmation dialogs for destructive actions.
 - Use toast notifications for successful operations.
-- Persist application data in Firebase Firestore.
+- Persist application data in Supabase PostgreSQL.
 - Add realistic seed data for development/demo use.
 - Include a reset-demo-data option that is restricted to the appropriate authorized environment and role.
 - Ensure dashboard statistics update automatically.
@@ -379,7 +379,7 @@ Before finishing:
 - Verify suspension and reactivation.
 - Verify expired accounts cannot enter the gym dashboard.
 - Verify the distinction between GymFlow subscriptions and gym member memberships.
-- Verify Firebase-backed data persistence after page refresh and across authenticated sessions.
+- Verify Supabase-backed data persistence after page refresh and across authenticated sessions.
 - Verify RTL layout.
 - Verify mobile responsiveness.
 - Verify the Next.js application is ready for deployment on Vercel.

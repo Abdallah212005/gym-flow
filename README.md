@@ -1,22 +1,15 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-## Firebase setup
+## Supabase setup
 
-The app uses Firebase Authentication for Google owner verification and username/password sessions, and Cloud Firestore through the Firebase Admin SDK for server-side data access. Firestore client access is denied by default; do not loosen these rules because the app's API enforces account, subscription, and role permissions.
+The app uses Supabase Auth for Google OAuth and username/password sign-in, and Supabase Postgres for gym, member, staff, and support-session data. Server-side API routes use the service-role key; browser clients never receive it. Row-level security is enabled without public policies.
 
-1. In Firebase project `gym-flow-928d9`, register a Web App and copy its API key and App ID.
-2. In **Authentication → Sign-in method**, enable Google and Email/Password.
-3. Create a service account with access to Firebase Authentication and Firestore. Keep its private key secret.
-4. Copy `.env.example` to `.env.local` and fill the Web App values plus `FIREBASE_CLIENT_EMAIL` and `FIREBASE_PRIVATE_KEY`. For a private key with newlines, use escaped `\n` sequences in the environment value.
-5. Add the same environment variables to the deployment provider. The `NEXT_PUBLIC_*` values are public Firebase Web App configuration; never expose the Admin service-account key.
-6. Deploy the locked Firestore rules with the Firebase CLI while authenticated to the intended project:
-
-   ```sh
-   firebase use gym-flow-928d9
-   firebase deploy --only firestore:rules
-   ```
-
-7. Install dependencies and run the app:
+1. Create a Supabase project and run [`supabase/migrations/20261112000000_initial_schema.sql`](./supabase/migrations/20261112000000_initial_schema.sql) in the Supabase SQL Editor.
+2. In **Authentication → Providers**, enable Google and Email/Password, then configure the Google OAuth client. Add the Supabase callback URL shown by the provider setup to the Google OAuth client's authorized redirect URIs.
+3. In **Authentication → URL Configuration**, set the site URL to your Vercel deployment and add `https://YOUR-DOMAIN/api/auth/callback` to the allowed redirect URLs. Add `http://localhost:3000/api/auth/callback` for local development.
+4. Copy `.env.example` to `.env.local`. Set the Supabase project URL, anon key, and service-role key from **Project Settings → API**. Keep the service-role key private and never prefix it with `NEXT_PUBLIC_`.
+5. Add those same three variables to the Vercel project's environment variables, then deploy the Next.js app normally. The `/api/*` routes run as Vercel functions.
+6. Install dependencies and run the app:
 
    ```sh
    npm install
@@ -25,7 +18,7 @@ The app uses Firebase Authentication for Google owner verification and username/
 
 New club registrations require Google verification and remain `pending` until the platform administrator activates them. Platform administration is restricted to `aamr222382@gmail.com`. Employees sign in with the username and password created by the club owner and receive only the selected permissions.
 
-The service-account credentials must be provisioned outside Git (for example, in the deployment provider's encrypted environment variables). Never commit `.env.local`, downloaded service-account JSON, or private keys.
+Existing authentication accounts and stored records are not copied automatically. Export and migrate them before switching production traffic. Never commit `.env.local` or service-role credentials.
 
 ## Getting Started
 

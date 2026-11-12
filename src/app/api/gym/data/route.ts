@@ -1,4 +1,4 @@
-import { getAdminDb } from "@/lib/firebase-admin";
+import { deleteGymRecord, getGymRecord, insertGymRecord, listGymRecords, updateGymRecord } from "@/lib/gym-records";
 import { errorResponse, HttpError, recordSupportAudit, requireActiveGym, requiredText } from "@/lib/server-auth";
 
 const collections = ["plans", "attendance", "payments", "staff", "expenses", "reports"] as const;
@@ -28,11 +28,10 @@ export async function GET(request: Request) {
       throw new HttpError("ليس لديك صلاحية لعرض أحد الأقسام المطلوبة.", 403);
     }
 
-    const results = await Promise.all(names.map(async (name) => {
-      const snapshot = await getAdminDb().collection("gyms").doc(gym.id).collection(name)
-        .orderBy("createdAt", "desc").limit(500).get();
-      return [name, snapshot.docs.map((document) => ({ ...document.data(), id: document.id }))] as const;
-    }));
+    const results = await Promise.all(names.map(async (name) => [
+      name,
+      await listGymRecords(gym.id, name),
+    ] as const));
     return Response.json({ data: Object.fromEntries(results) });
   } catch (error) {
     return errorResponse(error);
@@ -52,7 +51,6 @@ export async function POST(request: Request) {
 
     const values = body.data as Record<string, unknown>;
     const now = new Date().toISOString();
-    const ref = getAdminDb().collection("gyms").doc(gym.id).collection(collection).doc();
     const record: Record<string, unknown> = {
       ...values,
       createdBy: profile.uid,
@@ -61,9 +59,8 @@ export async function POST(request: Request) {
     };
     if (collection === "plans") {
       record.name = requiredText(values.name, "اسم الخطة", 80);
-      const existing = await getAdminDb().collection("gyms").doc(gym.id).collection("plans")
-        .where("name", "==", record.name).limit(1).get();
-      if (!existing.empty) throw new HttpError("اسم الخطة مستخدم بالفعل.", 409);
+      const plans = await listGymRecords(gym.id, "plans");
+      if (plans.some((plan) => plan.name === record.name)) throw new HttpError("اسم الخطة مستخدم بالفعل.", 409);
       const durationMonths = Number(values.durationMonths);
       const price = Number(values.price);
       if (!Number.isInteger(durationMonths) || durationMonths < 1 || durationMonths > 60 || !Number.isFinite(price) || price < 0) {
@@ -76,13 +73,14 @@ export async function POST(request: Request) {
       record.details = requiredText(values.details, "تفاصيل التقرير", 2000);
       record.status = "جديد";
     }
+    const id = crypto.randomUUID();
     await recordSupportAudit(supportSession, "data.create", {
       collection,
-      recordId: ref.id,
+      recordId: id,
       fields: Object.keys(values).join(", "),
     });
-    await ref.create(record);
-    return Response.json({ record: { id: ref.id, ...record } }, { status: 201 });
+    const saved = await insertGymRecord(gym.id, collection, record, { id });
+    return Response.json({ record: saved }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
   }
@@ -104,15 +102,15 @@ export async function PATCH(request: Request) {
     if (Object.keys(values).some((key) => !allowedFields.includes(key))) {
       throw new HttpError("الحقول المرسلة غير مسموحة.", 400);
     }
-    const ref = getAdminDb().collection("gyms").doc(gym.id).collection(collection).doc(body.id);
-    const snapshot = await ref.get();
-    if (!snapshot.exists) throw new HttpError("السجل غير موجود.", 404);
+    const existing = await getGymRecord(gym.id, collection, body.id);
+    if (!existing) throw new HttpError("السجل غير موجود.", 404);
     if (collection === "plans") {
       if (values.name !== undefined) requiredText(values.name, "اسم الخطة", 80);
-      if (typeof values.name === "string" && values.name !== snapshot.get("name")) {
-        const duplicate = await getAdminDb().collection("gyms").doc(gym.id).collection("plans")
-          .where("name", "==", values.name).limit(1).get();
-        if (!duplicate.empty) throw new HttpError("اسم الخطة مستخدم بالفعل.", 409);
+      if (typeof values.name === "string" && values.name !== existing.payload.name) {
+        const plans = await listGymRecords(gym.id, "plans");
+        if (plans.some((plan) => plan.id !== body.id && plan.name === values.name)) {
+          throw new HttpError("اسم الخطة مستخدم بالفعل.", 409);
+        }
       }
       if (values.active !== undefined && typeof values.active !== "boolean") {
         throw new HttpError("حالة الخطة غير صالحة.", 400);
@@ -125,14 +123,15 @@ export async function PATCH(request: Request) {
       }
     }
 
+    const updatedPayload = { ...existing.payload, ...values, updatedAt: new Date().toISOString() };
     await recordSupportAudit(supportSession, "data.update", {
       collection,
       recordId: body.id,
       fields: Object.keys(values).join(", "),
     });
-    await ref.update({ ...values, updatedAt: new Date().toISOString() });
-    const updated = await ref.get();
-    return Response.json({ record: { id: updated.id, ...updated.data() } });
+    const updated = await updateGymRecord(gym.id, collection, body.id, updatedPayload);
+    if (!updated) throw new HttpError("السجل غير موجود.", 404);
+    return Response.json({ record: updated });
   } catch (error) {
     return errorResponse(error);
   }
@@ -148,11 +147,11 @@ export async function DELETE(request: Request) {
     assertPermission(profile.role, profile.permissions, `write:${collection}`);
     if (!id) throw new HttpError("معرّف السجل مطلوب.", 400);
 
-    const ref = getAdminDb().collection("gyms").doc(gym.id).collection(collection).doc(id);
-    const snapshot = await ref.get();
-    if (!snapshot.exists) throw new HttpError("السجل غير موجود.", 404);
+    const existing = await getGymRecord(gym.id, collection, id);
+    if (!existing) throw new HttpError("السجل غير موجود.", 404);
     await recordSupportAudit(supportSession, "data.delete", { collection, recordId: id });
-    await ref.delete();
+    const deleted = await deleteGymRecord(gym.id, collection, id);
+    if (!deleted) throw new HttpError("السجل غير موجود.", 404);
     return Response.json({ deleted: true });
   } catch (error) {
     return errorResponse(error);

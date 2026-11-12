@@ -1,96 +1,62 @@
-import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
-import {
-  errorResponse,
-  LOGIN_EMAIL_DOMAIN,
-  normalizeUsername,
-  requiredText,
-  verifyGoogleIdToken,
-} from "@/lib/server-auth";
+import { getAuthUser, errorResponse, HttpError, normalizeUsername, requiredText, SUPER_ADMIN_EMAIL } from "@/lib/server-auth";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 
 export async function POST(request: Request) {
-  let createdUid: string | undefined;
   try {
+    const user = await getAuthUser();
+    if (!user?.email || !user.email_confirmed_at) throw new HttpError("تحقق من حساب Google قبل التسجيل.", 401);
+    if (user.email.toLowerCase() === SUPER_ADMIN_EMAIL) {
+      throw new HttpError("حساب مدير المنصة لا يسجل ناديًا.", 403);
+    }
     const body = await request.json() as {
-      idToken?: unknown;
       username?: unknown;
       password?: unknown;
       gymName?: unknown;
       ownerName?: unknown;
     };
-    const decoded = await verifyGoogleIdToken(body.idToken);
-    if (decoded.email?.toLowerCase() === "aamr222382@gmail.com") {
-      return Response.json({ error: "حساب مدير المنصة لا يسجل ناديًا." }, { status: 403 });
-    }
     const username = normalizeUsername(body.username);
     const password = requiredText(body.password, "كلمة المرور", 128);
-    if (password.length < 8) return Response.json({ error: "كلمة المرور يجب ألا تقل عن 8 أحرف." }, { status: 400 });
+    if (password.length < 8) throw new HttpError("كلمة المرور يجب ألا تقل عن 8 أحرف.", 400);
     const gymName = requiredText(body.gymName, "اسم النادي", 100);
     const ownerName = requiredText(body.ownerName, "اسم المالك", 100);
+    const db = getSupabaseAdminClient();
 
-    const auth = getAdminAuth();
-    const db = getAdminDb();
-    const existingOwner = await db.collection("googleOwners").doc(decoded.uid).get();
-    if (existingOwner.exists) return Response.json({ error: "هذا البريد مسجل بالفعل." }, { status: 409 });
-    const existingAuthUser = await auth.getUserByEmail(`${username}@${LOGIN_EMAIL_DOMAIN}`).catch((error: unknown) => {
-      if (typeof error === "object" && error !== null && "code" in error && error.code === "auth/user-not-found") return null;
-      throw error;
-    });
-    if (existingAuthUser) return Response.json({ error: "اسم المستخدم مستخدم بالفعل." }, { status: 409 });
+    const { data: existingProfile, error: profileError } = await db
+      .from("user_profiles")
+      .select("id")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (profileError) throw profileError;
+    if (existingProfile) throw new HttpError("هذا البريد مسجل بالفعل.", 409);
 
-    const gymRef = db.collection("gyms").doc();
-    const usernameRef = db.collection("usernames").doc(username);
-    const googleOwnerRef = db.collection("googleOwners").doc(decoded.uid);
-    const ownerAuth = await auth.createUser({
-      email: `${username}@${LOGIN_EMAIL_DOMAIN}`,
+    const { error: authError } = await db.auth.admin.updateUserById(user.id, {
       password,
-      displayName: ownerName,
-      emailVerified: true,
+      user_metadata: { ...user.user_metadata, full_name: ownerName },
     });
-    createdUid = ownerAuth.uid;
+    if (authError) throw authError;
 
     const now = new Date().toISOString();
-    await db.runTransaction(async (transaction) => {
-      const usernameSnapshot = await transaction.get(usernameRef);
-      const ownerSnapshot = await transaction.get(googleOwnerRef);
-      if (usernameSnapshot.exists || ownerSnapshot.exists) {
-        throw new Error("USERNAME_OR_OWNER_EXISTS");
-      }
-      transaction.create(gymRef, {
+    const gymId = crypto.randomUUID();
+    const { error } = await db.rpc("gymflow_register_gym", {
+      p_gym: {
+        id: gymId,
         name: gymName,
-        ownerName,
-        ownerEmail: decoded.email,
-        googleOwnerUid: decoded.uid,
-        subscriptionStatus: "pending",
-        subscriptionStartsAt: null,
-        subscriptionEndsAt: null,
-        createdAt: now,
-      });
-      transaction.create(usernameRef, { uid: ownerAuth.uid, gymId: gymRef.id });
-      transaction.create(googleOwnerRef, { gymId: gymRef.id, ownerUid: ownerAuth.uid, createdAt: now });
-      transaction.create(db.collection("users").doc(ownerAuth.uid), {
-        uid: ownerAuth.uid,
-        email: decoded.email,
-        displayName: ownerName,
+        owner_name: ownerName,
+        owner_email: user.email,
+        created_at: now,
+      },
+      p_profile: {
+        id: user.id,
+        email: user.email,
+        display_name: ownerName,
         username,
-        gymId: gymRef.id,
-        role: "owner",
-        permissions: ["*"],
-        createdAt: now,
-      });
+        created_at: now,
+      },
     });
-
+    if (error?.code === "23505") throw new HttpError("اسم المستخدم أو بريد Google مسجل بالفعل.", 409);
+    if (error) throw error;
     return Response.json({ created: true, status: "pending" }, { status: 201 });
   } catch (error) {
-    if (createdUid) {
-      try {
-        await getAdminAuth().deleteUser(createdUid);
-      } catch (cleanupError) {
-        console.error("Could not remove unlinked Firebase Auth user:", cleanupError);
-      }
-    }
-    if (error instanceof Error && error.message === "USERNAME_OR_OWNER_EXISTS") {
-      return Response.json({ error: "اسم المستخدم أو بريد Google مسجل بالفعل." }, { status: 409 });
-    }
     return errorResponse(error);
   }
 }

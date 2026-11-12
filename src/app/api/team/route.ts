@@ -1,4 +1,4 @@
-import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 import {
   errorResponse,
   HttpError,
@@ -20,19 +20,20 @@ export async function GET(request: Request) {
   try {
     const { gym, profile } = await requireActiveGym(request, "manage:team");
     if (!gym || profile.role !== "owner") throw new HttpError("إدارة الموظفين متاحة لمالك النادي فقط.", 403);
-    const snapshot = await getAdminDb().collection("users").where("gymId", "==", gym.id).get();
+    const { data, error } = await getSupabaseAdminClient()
+      .from("user_profiles")
+      .select("id,display_name,username,role,permissions,created_at")
+      .eq("gym_id", gym.id);
+    if (error) throw error;
     return Response.json({
-      users: snapshot.docs.map((document) => {
-        const user = document.data();
-        return {
-          uid: document.id,
-          displayName: user.displayName,
-          username: user.username,
-          role: user.role,
-          permissions: user.permissions ?? [],
-          createdAt: user.createdAt,
-        };
-      }),
+      users: data.map((user) => ({
+        uid: user.id,
+        displayName: user.display_name,
+        username: user.username,
+        role: user.role,
+        permissions: user.permissions ?? [],
+        createdAt: user.created_at,
+      })),
     });
   } catch (error) {
     return errorResponse(error);
@@ -68,69 +69,62 @@ export async function POST(request: Request) {
     if (role === "manager" && body.permissions.length === 0) throw new HttpError("اختر صلاحية واحدة على الأقل للمدير.", 400);
 
     await recordSupportAudit(supportSession, "team.create", { role });
-    const auth = getAdminAuth();
-    const db = getAdminDb();
-    const usernameRef = db.collection("usernames").doc(username);
-    const authUser = await auth.createUser({
-      email: `${username}@${LOGIN_EMAIL_DOMAIN}`,
-      password,
-      displayName,
-      emailVerified: true,
-    });
-    createdUid = authUser.uid;
-    const userRef = db.collection("users").doc(authUser.uid);
-    const staffRef = db.collection("gyms").doc(gym.id).collection("staff").doc(authUser.uid);
+    const permissions = [...new Set(body.permissions as string[])];
     const now = new Date().toISOString();
-    await db.runTransaction(async (transaction) => {
-      const existing = await transaction.get(usernameRef);
-      if (existing.exists) throw new Error("USERNAME_EXISTS");
-      transaction.create(usernameRef, { uid: authUser.uid, gymId: gym.id });
-      transaction.create(userRef, {
-        uid: authUser.uid,
-        email: `${username}@${LOGIN_EMAIL_DOMAIN}`,
-        displayName,
-        username,
-        gymId: gym.id,
-        role,
-        permissions: [...new Set(body.permissions as string[])],
-        createdAt: now,
-        createdBy: profile.uid,
-      });
-      transaction.create(staffRef, {
-        uid: authUser.uid,
-        name: displayName,
-        username,
-        role: role === "manager" ? "مدير" : "موظف",
-        specialty,
-        salary,
-        status: "نشط",
-        createdAt: now,
-        createdBy: profile.uid,
-      });
+    const email = `${username}@${LOGIN_EMAIL_DOMAIN}`;
+    const db = getSupabaseAdminClient();
+    const { data: authResult, error: authError } = await db.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: displayName },
     });
-    return Response.json({
-      user: {
-        uid: authUser.uid,
-        displayName,
+    if (authError) {
+      if (authError.code === "email_exists" || authError.code === "user_already_exists") {
+        throw new HttpError("اسم المستخدم مستخدم بالفعل.", 409);
+      }
+      throw authError;
+    }
+    createdUid = authResult.user.id;
+
+    const { error } = await db.rpc("gymflow_create_team_user", {
+      p_profile: {
+        id: createdUid,
+        email,
+        display_name: displayName,
         username,
+        gym_id: gym.id,
         role,
-        permissions: [...new Set(body.permissions as string[])],
-        createdAt: now,
+        permissions,
+        created_at: now,
+        created_by: profile.uid,
       },
+      p_staff: {
+        id: createdUid,
+        gym_id: gym.id,
+        created_at: now,
+        payload: {
+          uid: createdUid,
+          name: displayName,
+          username,
+          role: role === "manager" ? "مدير" : "موظف",
+          specialty,
+          salary,
+          status: "نشط",
+          createdAt: now,
+          createdBy: profile.uid,
+        },
+      },
+    });
+    if (error?.code === "23505") throw new HttpError("اسم المستخدم مستخدم بالفعل.", 409);
+    if (error) throw error;
+    return Response.json({
+      user: { uid: createdUid, displayName, username, role, permissions, createdAt: now },
     }, { status: 201 });
   } catch (error) {
     if (createdUid) {
-      try {
-        await getAdminAuth().deleteUser(createdUid);
-      } catch (cleanupError) {
-        console.error("Could not remove unlinked Firebase Auth user:", cleanupError);
-      }
-    }
-    if (error instanceof Error && error.message === "USERNAME_EXISTS") {
-      return Response.json({ error: "اسم المستخدم مستخدم بالفعل." }, { status: 409 });
-    }
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "auth/email-already-exists") {
-      return Response.json({ error: "اسم المستخدم مستخدم بالفعل." }, { status: 409 });
+      const { error: cleanupError } = await getSupabaseAdminClient().auth.admin.deleteUser(createdUid);
+      if (cleanupError) console.error("Could not remove unlinked Supabase Auth user:", cleanupError);
     }
     return errorResponse(error);
   }

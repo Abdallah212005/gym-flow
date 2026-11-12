@@ -2,6 +2,8 @@
 
 # dependencies
 /node_modules
+/functions/node_modules
+/functions/lib
 /.pnp
 .pnp.*
 .yarn/*
@@ -37,8 +39,6 @@ yarn-error.log*
 !.env.example
 .dev.vars*
 !.dev.vars.example
-/firebase-admin-key.json
-/*-firebase-adminsdk-*.json
 
 # vercel
 .vercel

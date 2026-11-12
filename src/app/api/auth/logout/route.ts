@@ -1,36 +1,36 @@
-import { getAdminDb } from "@/lib/firebase-admin";
+import { cookies } from "next/headers";
 import {
-  clearSessionResponse,
   getActiveSupportSession,
-  getVerifiedSession,
+  getAuthUser,
   recordSupportAudit,
-  SESSION_COOKIE,
   SUPPORT_SESSION_COOKIE,
   SUPER_ADMIN_EMAIL,
 } from "@/lib/server-auth";
+import { getSupabaseAdminClient, getSupabaseServerClient } from "@/lib/supabase";
 
 export async function POST(request: Request) {
-  const sessionCookie = request.headers.get("cookie")
-    ?.split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${SESSION_COOKIE}=`))
-    ?.slice(SESSION_COOKIE.length + 1);
-  const decoded = await getVerifiedSession(sessionCookie);
-  if (decoded?.email?.toLowerCase() === SUPER_ADMIN_EMAIL) {
-    const supportSession = await getActiveSupportSession(request, decoded.uid);
+  const user = await getAuthUser();
+  if (user?.email?.toLowerCase() === SUPER_ADMIN_EMAIL) {
+    const supportSession = await getActiveSupportSession(request, user.id);
     if (supportSession) {
       await recordSupportAudit(supportSession, "session.end", { reason: "logout" });
-      await getAdminDb().collection("supportSessions").doc(supportSession.id).update({
-        active: false,
-        endedAt: new Date().toISOString(),
-        endReason: "logout",
-      });
+      const { error } = await getSupabaseAdminClient()
+        .from("support_sessions")
+        .update({ active: false, ended_at: new Date().toISOString(), end_reason: "logout" })
+        .eq("id", supportSession.id);
+      if (error) throw error;
     }
   }
-  const response = clearSessionResponse();
-  response.headers.append(
-    "Set-Cookie",
-    `${SUPPORT_SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}`,
-  );
-  return response;
+  const supabase = await getSupabaseServerClient();
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
+  const cookieStore = await cookies();
+  cookieStore.set(SUPPORT_SESSION_COOKIE, "", {
+    maxAge: 0,
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
+  return new Response(null, { status: 204 });
 }

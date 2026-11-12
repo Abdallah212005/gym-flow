@@ -1,57 +1,64 @@
-import { getAdminDb } from "@/lib/firebase-admin";
 import {
   errorResponse,
   getActiveSupportSession,
-  getGoogleOwnerProfile,
+  getAuthUser,
+  getGym,
   getProfile,
-  getVerifiedSession,
-  SESSION_COOKIE,
+  profileFromAuthUser,
   SUPER_ADMIN_EMAIL,
 } from "@/lib/server-auth";
+import { getSupabaseAdminClient } from "@/lib/supabase";
+import { connection } from "next/server";
 import type { GymAccount, GymAppUser } from "@/lib/gym-data";
 
 export async function GET(request: Request) {
-  const cookie = request.headers.get("cookie")
-    ?.split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${SESSION_COOKIE}=`))
-    ?.slice(SESSION_COOKIE.length + 1);
+  await connection();
   try {
-    const decoded = await getVerifiedSession(cookie);
-    if (!decoded) return Response.json({ profile: null, gym: null, supportMode: false });
+    const authUser = await getAuthUser();
+    if (!authUser) return Response.json({ profile: null, gym: null, supportMode: false });
 
-    const isSuperAdmin = decoded.email?.toLowerCase() === SUPER_ADMIN_EMAIL;
+    const isSuperAdmin = authUser.email?.toLowerCase() === SUPER_ADMIN_EMAIL;
     const profile: GymAppUser | null = isSuperAdmin
-      ? {
-          uid: decoded.uid,
-          email: SUPER_ADMIN_EMAIL,
-          displayName: decoded.name ?? "Super Admin",
-          role: "super_admin" as const,
-          permissions: ["*"],
-        }
-      : await getProfile(decoded.uid) ?? await getGoogleOwnerProfile(decoded.uid);
-    if (!profile) return Response.json({ error: "الحساب غير مرتبط بنادٍ." }, { status: 403 });
+      ? profileFromAuthUser(authUser)
+      : await getProfile(authUser.id);
+    if (!profile) {
+      const providers = authUser.app_metadata.providers;
+      const registrationRequired = authUser.app_metadata.provider === "google" ||
+        (Array.isArray(providers) && providers.includes("google"));
+      return Response.json({
+        profile: null,
+        gym: null,
+        supportMode: false,
+        registrationRequired,
+        email: authUser.email ?? "",
+        displayName: String(authUser.user_metadata.full_name ?? authUser.user_metadata.name ?? ""),
+      });
+    }
+
     if (isSuperAdmin) {
-      const supportSession = await getActiveSupportSession(request, decoded.uid);
+      const supportSession = await getActiveSupportSession(request, authUser.id);
       if (!supportSession) return Response.json({ profile, gym: null, supportMode: false });
-      const gymSnapshot = await getAdminDb().collection("gyms").doc(supportSession.gymId).get();
-      if (!gymSnapshot.exists) return Response.json({ error: "بيانات النادي غير موجودة." }, { status: 403 });
+      const gym = await getGym(supportSession.gymId);
+      if (!gym) return Response.json({ error: "بيانات النادي غير موجودة." }, { status: 403 });
       return Response.json({
         profile: { ...profile, gymId: supportSession.gymId, role: "owner", permissions: ["*"] },
-        gym: { ...gymSnapshot.data(), id: gymSnapshot.id },
+        gym,
         supportMode: true,
       });
     }
     if (!profile.gymId) return Response.json({ profile, gym: null, supportMode: false });
 
-    const gymSnapshot = await getAdminDb().collection("gyms").doc(profile.gymId).get();
-    if (!gymSnapshot.exists) return Response.json({ error: "بيانات النادي غير موجودة." }, { status: 403 });
-    const gym = { ...gymSnapshot.data(), id: gymSnapshot.id } as GymAccount;
+    const gym = await getGym(profile.gymId);
+    if (!gym) return Response.json({ error: "بيانات النادي غير موجودة." }, { status: 403 });
     if (gym.subscriptionStatus === "active" && typeof gym.subscriptionEndsAt === "string" && Date.parse(gym.subscriptionEndsAt) <= Date.now()) {
-      await gymSnapshot.ref.update({ subscriptionStatus: "expired" });
+      const { error } = await getSupabaseAdminClient()
+        .from("gyms")
+        .update({ subscription_status: "expired" })
+        .eq("id", gym.id);
+      if (error) throw error;
       gym.subscriptionStatus = "expired";
     }
-    return Response.json({ profile, gym, supportMode: false });
+    return Response.json({ profile, gym: gym as GymAccount, supportMode: false });
   } catch (error) {
     return errorResponse(error);
   }
