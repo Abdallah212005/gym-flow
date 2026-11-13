@@ -11,6 +11,7 @@ import {
   CreditCard,
   Dumbbell,
   LayoutDashboard,
+  LockKeyhole,
   Menu,
   Plus,
   Search,
@@ -397,7 +398,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return (
       <main className="auth-page">
         <section className="auth-card">
-          <div className="brand-row auth-brand"><Image className="brand-mark" src="/gymflow-mark.svg" alt="" width={38} height={38} /><span className="brand-name">Gym<span>Flow</span></span></div>
+          <div className="brand-row auth-brand"><Image className="brand-mark" src="/gymflow-logo.png" alt="GymFlow" width={609} height={122} /></div>
           <p className="eyebrow">{gym?.name ?? "GymFlow"}</p>
           <h1>النادي غير مفعّل</h1>
           <p className="page-description">{subscriptionMessage}</p>
@@ -415,15 +416,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="app-shell">
         <aside className={`sidebar ${mobileMenuOpen ? "sidebar-open" : ""}`}>
           <div className="brand-row">
-            <Image className="brand-mark" src="/gymflow-mark.svg" alt="" width={38} height={38} />
-            <span className="brand-name">Gym<span>Flow</span></span>
+            <Image className="brand-mark" src="/gymflow-logo-light.png" alt="GymFlow" width={609} height={122} />
             <IconButton className="mobile-close" label="إغلاق القائمة" onClick={() => setMobileMenuOpen(false)}><X size={18} /></IconButton>
           </div>
-          {user.role !== "super_admin" && <button className="gym-switcher">
-            <span className="gym-logo">{gym?.name.slice(0, 2) ?? "G"}</span>
-            <span className="gym-switcher-copy"><strong>{gym?.name}</strong><small>حساب النادي</small></span>
-            <ChevronDown size={15} />
-          </button>}
           {user.role !== "super_admin" && <><div className="nav-caption">القائمة الرئيسية</div>
           <nav className="main-nav" aria-label="القائمة الرئيسية">
             {visibleNavigation.map((item) => (
@@ -433,7 +428,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           {user.role === "super_admin" && <><div className="owner-divider"><span>مساحة المنصة</span></div>
           <NavButton item={{ id: "platform", label: "إدارة المنصة", icon: Shield }} active={section === "platform"} onClick={() => navigate("platform")} owner /></>}
           <div className="sidebar-bottom">
-            <div className="sidebar-help"><span className="help-mark">?</span><div><strong>تحتاج مساعدة؟</strong><span>فريقنا هنا لمساعدتك</span></div><ChevronDown size={14} /></div>
             <button className="profile-button" onClick={() => notify(user.email)}>
               <Avatar initials={user.displayName.slice(0, 2)} color="dark" />
               <span><strong>{user.displayName}</strong><small>{user.username ?? user.email}</small></span>
@@ -477,6 +471,26 @@ export function AppShell({ children }: { children: ReactNode }) {
           {loadError && <div className="load-error-banner" role="alert"><span>{loadError}</span><button onClick={() => void refreshData().catch((error: unknown) => setLoadError(error instanceof Error ? error.message : "تعذر تحميل بيانات النادي."))}>إعادة المحاولة</button></div>}
           <div className="content-area">{children}</div>
         </main>
+        {user.role !== "super_admin" && (
+          <nav className="mobile-bottom-nav" aria-label="تنقل سريع">
+            {visibleNavigation
+              .filter((item) => ["overview", "members", "attendance", "payments"].includes(item.id))
+              .map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    className={`mobile-nav-item ${section === item.id ? "mobile-nav-item-active" : ""}`}
+                    aria-current={section === item.id ? "page" : undefined}
+                    onClick={() => navigate(item.id)}
+                  >
+                    <Icon size={19} strokeWidth={1.8} />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+          </nav>
+        )}
         {toast && <ToastMessage message={toast} onClose={() => setToast("")} />}
         {canWriteMembers && user.role !== "super_admin" && <button className="quick-add" aria-label="إضافة عضو سريع" onClick={openMemberForm}><Plus size={19} /></button>}
       </div>
@@ -498,7 +512,7 @@ function NavButton({
   const Icon = item.icon;
   return (
     <button className={`nav-item ${active ? "nav-item-active" : ""} ${owner ? "nav-item-owner" : ""}`} onClick={onClick}>
-      <Icon size={18} strokeWidth={1.8} /><span>{item.label}</span>{owner && <span className="owner-lock">●</span>}
+      <Icon size={18} strokeWidth={1.8} /><span>{item.label}</span>{owner && <span className="owner-lock"><LockKeyhole size={14} aria-label="صلاحيات المدير" /></span>}
     </button>
   );
 }

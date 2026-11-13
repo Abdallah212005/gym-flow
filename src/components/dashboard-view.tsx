@@ -8,12 +8,12 @@ import {
   ChartNoAxesCombined,
   ChevronLeft,
   CreditCard,
+  ListChecks,
+  PenLine,
   Plus,
   ScanLine,
-  Trophy,
   UserRound,
   Wallet,
-  Zap,
 } from "lucide-react";
 import type { GymAppData, Member, GymSection } from "@/lib/gym-data";
 import { formatMoney } from "@/lib/gym-data";
@@ -117,43 +117,88 @@ export function DashboardView({
 
   return (
     <div className="page-stack">
-      <section className="dashboard-hero">
-        <div className="dashboard-hero-photo" aria-hidden="true" />
-        <div className="hero-copy">
-          <span className="hero-kicker">أهلاً بك في</span>
-          <h1><span>GymFlow</span></h1>
-          <p>إدارة أذكى .. لنمو أكبر لناديك</p>
+      <section className="dashboard-heading">
+        <div>
+          <span className="dashboard-eyebrow">نظرة عامة</span>
+          <h1>أهلاً بك في يوم جديد</h1>
+          <p>إليك ملخص أداء ناديك ونشاطه اليوم.</p>
+        </div>
+        <div className="dashboard-heading-actions">
+          {canAddMember && <button className="button button-primary dashboard-add-button" onClick={onAddMember}><Plus size={17} /> إضافة عضو</button>}
+          {canReadReports && <button className="button button-secondary dashboard-report-button" onClick={() => onNavigate("reports")}><ChartNoAxesCombined size={16} /> التقارير</button>}
+          <span className="dashboard-date"><CalendarDays size={16} />{new Intl.DateTimeFormat("ar-EG", { weekday: "long", day: "numeric", month: "long" }).format(todayDate)}</span>
         </div>
       </section>
 
       <section className="stats-grid" aria-label="ملخص النادي">
-        <article className="stat-card">
-          <div className="stat-icon stat-icon-green"><CreditCard size={21} /></div>
+        {canReadPayments && <article className="stat-card stat-card-sales">
+          <div className="stat-card-top"><span className="stat-icon"><CreditCard size={19} /></span><span className="stat-label">إيرادات اليوم</span></div>
           <div className="stat-value">{formatMoney(todayRevenue)}<span className="stat-unit">ج.م</span></div>
-          <div className="stat-label">مبيعات اليوم</div>
-        </article>
-        <article className="stat-card">
-          <div className="stat-icon stat-icon-blue"><ScanLine size={21} /></div>
+          <span className="stat-foot">إجمالي الدفعات المسجلة اليوم</span>
+        </article>}
+        {canReadAttendance && <article className="stat-card stat-card-attendance">
+          <div className="stat-card-top"><span className="stat-icon"><ScanLine size={19} /></span><span className="stat-label">حضور اليوم</span></div>
           <div className="stat-value">{formatMoney(todayAttendance.length)}<span className="stat-unit">عضو</span></div>
-          <div className="stat-label">حضور اليوم</div>
-        </article>
-        <article className="stat-card">
-          <div className="stat-icon stat-icon-sand"><BadgeCheck size={21} /></div>
+          <span className="stat-foot">عمليات تسجيل الحضور اليوم</span>
+        </article>}
+        {canReadMembers && <article className="stat-card stat-card-members">
+          <div className="stat-card-top"><span className="stat-icon"><BadgeCheck size={19} /></span><span className="stat-label">الأعضاء النشطون</span></div>
           <div className="stat-value">{formatMoney(activeCount)}<span className="stat-unit">عضو</span></div>
-          <div className="stat-label">الأعضاء النشطون</div>
-        </article>
-        <article className="stat-card">
-          <div className="stat-icon stat-icon-rose"><Wallet size={21} /></div>
+          <span className="stat-foot">من إجمالي {formatMoney(members.length)} عضو</span>
+        </article>}
+        {canReadMembers && canReadPayments && <article className="stat-card stat-card-pending">
+          <div className="stat-card-top"><span className="stat-icon"><Wallet size={19} /></span><span className="stat-label">مستحقات معلّقة</span></div>
           <div className="stat-value">{formatMoney(pendingAmount)}<span className="stat-unit">ج.م</span></div>
-          <div className="stat-label">مستحقات معلّقة</div>
-        </article>
+          <span className="stat-foot">المتبقي على اشتراكات الأعضاء</span>
+        </article>}
       </section>
 
       <section className="dashboard-grid dashboard-overview-grid">
-        {canReadMembers || canReadMemberships || canReadPayments || canReadAttendance ? <article className="panel activity-panel">
+        {canReadPayments && <article className="panel revenue-panel">
           <div className="panel-heading">
-            <div><h2>أحدث الأنشطة</h2><p>آخر التحديثات في ناديك</p></div>
-            <Zap size={19} className="activity-heading-icon" />
+            <div><span className="dashboard-panel-kicker">الأداء المالي</span><h2><ChartNoAxesCombined size={18} /> الإيرادات خلال آخر ٦ أشهر</h2></div>
+            <span className="chart-period">آخر ٦ أشهر <ChevronLeft size={14} /></span>
+          </div>
+          <div className="revenue-summary"><strong>{formatMoney(totalRevenue)} <small>ج.م</small></strong><span>إجمالي الإيرادات</span></div>
+          <div className="chart" role="img" aria-label="رسم بياني للإيرادات خلال آخر ستة أشهر">
+            <svg className="revenue-chart-svg" viewBox="0 0 600 220" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <linearGradient id="revenue-fill" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor="var(--ds-primary-500)" stopOpacity=".32" />
+                  <stop offset="100%" stopColor="var(--ds-primary-500)" stopOpacity=".01" />
+                </linearGradient>
+              </defs>
+              {[36, 78, 120, 162, 190].map((y) => <line key={y} x1="16" x2="584" y1={y} y2={y} className="revenue-chart-gridline" />)}
+              {chartArea && <path d={chartArea} fill="url(#revenue-fill)" />}
+              {chartLine && <path d={chartLine} className="revenue-chart-line" />}
+              {chartPoints.map((point, index) => <circle key={monthlyRevenue[index].label} cx={point.x} cy={point.y} r="5" className={`revenue-chart-point ${index === chartPoints.length - 1 ? "revenue-chart-point-current" : ""}`} />)}
+            </svg>
+            <div className="chart-labels" aria-hidden="true">
+              {monthlyRevenue.map((month) => <span key={month.label}>{month.label}</span>)}
+            </div>
+          </div>
+          {!data.payments.length && <p className="dashboard-empty-note">ستظهر الإيرادات بعد تسجيل أول دفعة.</p>}
+        </article>}
+
+        {canReadAttendance && <article className="panel attendance-panel dashboard-attendance-panel">
+          <div className="panel-heading">
+            <div><span className="dashboard-panel-kicker">حركة النادي</span><h2>الحضور اليوم</h2></div>
+            <CalendarDays className="attendance-date-icon" size={18} aria-label="اليوم" />
+          </div>
+          <div className="attendance-total"><strong>{formatMoney(todayAttendance.length)}</strong><span>عملية حضور</span></div>
+          <div className="attendance-meta"><span>إجمالي تسجيلات اليوم</span><strong>{new Intl.DateTimeFormat("ar-EG", { day: "numeric", month: "short" }).format(todayDate)}</strong></div>
+          <div className="mini-divider" />
+          <div className="attendance-split">
+            <div><ListChecks className="attendance-detail-icon" size={16} aria-hidden="true" />تسجيلات اليوم<strong>{formatMoney(todayAttendance.length)}</strong></div>
+            <div><PenLine className="attendance-detail-icon" size={16} aria-hidden="true" />طريقة التسجيل<strong>يدوي</strong></div>
+          </div>
+          <button className="button button-secondary full-button" onClick={() => onNavigate("attendance")}>عرض سجل الحضور <ArrowUpLeft size={15} /></button>
+        </article>}
+
+        {canReadMembers || canReadMemberships || canReadPayments || canReadAttendance ? <article className="panel activity-panel dashboard-activity-panel">
+          <div className="panel-heading">
+            <div><span className="dashboard-panel-kicker">آخر التحديثات</span><h2>أحدث الأنشطة</h2></div>
+            <span className="activity-heading-icon"><CalendarDays size={18} /></span>
           </div>
           <div className="activity-list">
             {recentActivities.map((activity) => {
@@ -172,43 +217,6 @@ export function DashboardView({
             {!recentActivities.length && <EmptyState title="لا توجد أنشطة بعد" description="ستظهر هنا أحدث تحديثات النادي." />}
           </div>
         </article> : null}
-
-        <article className="panel revenue-panel">
-          <div className="panel-heading">
-            <div><h2><ChartNoAxesCombined size={17} /> الإيرادات خلال آخر ٦ أشهر</h2></div>
-            <span className="chart-period">آخر ٦ أشهر <ChevronLeft size={14} /></span>
-          </div>
-          <div className="revenue-summary"><strong>{formatMoney(totalRevenue)} <small>ج.م</small></strong></div>
-          <div className="chart" role="img" aria-label="رسم بياني للإيرادات خلال آخر ستة أشهر">
-            <svg className="revenue-chart-svg" viewBox="0 0 600 220" preserveAspectRatio="none" aria-hidden="true">
-              <defs>
-                <linearGradient id="revenue-fill" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="var(--ds-lime-400)" stopOpacity=".38" />
-                  <stop offset="100%" stopColor="var(--ds-lime-400)" stopOpacity=".03" />
-                </linearGradient>
-              </defs>
-              {[36, 78, 120, 162, 190].map((y) => <line key={y} x1="16" x2="584" y1={y} y2={y} className="revenue-chart-gridline" />)}
-              {chartArea && <path d={chartArea} fill="url(#revenue-fill)" />}
-              {chartLine && <path d={chartLine} className="revenue-chart-line" />}
-              {chartPoints.map((point, index) => <circle key={monthlyRevenue[index].label} cx={point.x} cy={point.y} r="5" className={`revenue-chart-point ${index === chartPoints.length - 1 ? "revenue-chart-point-current" : ""}`} />)}
-            </svg>
-            <div className="chart-labels" aria-hidden="true">
-              {monthlyRevenue.map((month) => <span key={month.label}>{month.label}</span>)}
-            </div>
-          </div>
-          {!data.payments.length && <p className="dashboard-empty-note">ستظهر الإيرادات بعد تسجيل أول دفعة.</p>}
-        </article>
-
-        <article className="promo-card">
-          <div className="promo-card-copy">
-            <Trophy size={29} />
-            <h2>نادي أقوى<br />بإدارة أذكى</h2>
-            <div className="promo-card-actions">
-              {canReadReports && <button onClick={() => onNavigate("reports")}>عرض التقارير <ArrowUpLeft size={14} /></button>}
-              {!canReadReports && canAddMember && <button onClick={onAddMember}>إضافة عضو <Plus size={14} /></button>}
-            </div>
-          </div>
-        </article>
       </section>
 
       <section className="dashboard-grid lower-grid">

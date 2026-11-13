@@ -19,6 +19,8 @@ type AuthResponse = {
   registrationRequired?: boolean;
 };
 
+const usernamePattern = /^[a-z0-9._-]{3,32}$/;
+
 async function postJson(path: string, body: Record<string, unknown>) {
   const response = await fetch(path, {
     method: "POST",
@@ -108,10 +110,28 @@ export function AuthGate({ onAuthenticated }: Props) {
 
   async function register(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true);
     setError("");
+    const normalizedUsername = username.trim().toLowerCase();
+    if (!usernamePattern.test(normalizedUsername)) {
+      setError("اسم المستخدم يجب أن يتكون من 3 إلى 32 حرفًا، ويقبل الحروف الإنجليزية والأرقام والنقطة والشرطة والشرطة السفلية.");
+      return;
+    }
+    if (password.length < 8) {
+      setError("كلمة المرور يجب ألا تقل عن 8 أحرف.");
+      return;
+    }
+    if (!gymName.trim() || !ownerName.trim()) {
+      setError("اكتب اسم النادي واسم المالك.");
+      return;
+    }
+    setBusy(true);
     try {
-      await postJson("/api/auth/register", { username, password, gymName, ownerName });
+      await postJson("/api/auth/register", {
+        username: normalizedUsername,
+        password,
+        gymName: gymName.trim(),
+        ownerName: ownerName.trim(),
+      });
       const session = await loadSession();
       await onAuthenticated(session.profile!, session.gym ?? null);
     } catch (reason) {
@@ -123,49 +143,42 @@ export function AuthGate({ onAuthenticated }: Props) {
 
   return (
     <main className="auth-page" dir="rtl">
-      <section className="auth-layout">
-        <aside className="auth-aside">
-          <div className="auth-aside-brand">
-            <Image className="auth-brand-mark" src="/gymflow-mark.svg" alt="" width={38} height={38} />
-            <span>Gym<span>Flow</span></span>
-          </div>
-          <div className="auth-aside-copy">
-            <span className="auth-aside-kicker">إدارة ناديك ببساطة</span>
-            <h2>خلّي تركيزك<br />على التمرين.</h2>
-            <p>الأعضاء والاشتراكات والحضور، كلهم في مكان واحد.</p>
-            <div className="auth-benefits">
-              <span><UsersRoundIcon /> ملفات الأعضاء والاشتراكات</span>
-              <span><ShieldCheck size={17} /> حساب مستقل لكل نادٍ</span>
-            </div>
-          </div>
-          <div className="auth-aside-footer"><span /> نظام إدارة GymFlow</div>
-        </aside>
-
-        <section className="auth-panel" aria-live="polite">
-          <div className="auth-mobile-brand">
-            <Image className="auth-brand-mark" src="/gymflow-mark.svg" alt="" width={38} height={38} />
-            <span>Gym<span>Flow</span></span>
+      <div className="auth-ambient" aria-hidden="true" />
+      <div className="auth-container">
+        <section className={`auth-card auth-login-card ${mode === "owner" ? "auth-login-owner" : ""}`} aria-live="polite">
+          <div className="auth-branding">
+            <Image className="auth-logo" src="/gymflow-logo.png" alt="GymFlow" width={609} height={122} priority />
           </div>
 
           {mode === "owner" && <>
-            <span className="auth-step">دخول مالك النادي</span>
-            <h1>أهلاً بعودتك</h1>
-            <p className="auth-description">ادخل بحساب Google المرتبط بناديك.</p>
+            <div className="auth-welcome">
+              <h1>تسجيل الدخول</h1>
+              <p>مرحباً بك مجدداً في نظام GymFlow لإدارة ناديك الرياضي</p>
+            </div>
             <Button className="auth-primary auth-google-button" onClick={googleSignIn} disabled={busy || !isSupabaseConfigured}>
               <GoogleMark />
-              <span>{busy ? "جارٍ التحويل..." : "الدخول باستخدام Google"}</span>
+              <span>{busy ? "جارٍ التحويل..." : "المتابعة باستخدام Google"}</span>
             </Button>
-            <p className="auth-caption"><LockKeyhole size={13} /> دخول آمن إلى مساحة ناديك</p>
-            <div className="auth-separator"><span>أول مرة هنا؟</span></div>
-            <button className="auth-secondary-action" onClick={() => showMode("register")}>سجّل ناديك الجديد <ArrowRight size={15} /></button>
-            <button className="auth-employee-link" onClick={() => showMode("employee")}><UserRound size={16} /> أنا موظف — الدخول باسم المستخدم</button>
+            <div className="auth-separator"><span>أو</span></div>
+            <button className="auth-secondary-action" onClick={() => showMode("employee")}>
+              <UserRound size={18} aria-hidden="true" />
+              <span>الدخول باسم المستخدم وكلمة المرور</span>
+            </button>
+            <div className="auth-register-prompt">
+              <p>ليس لديك نادٍ مسجل حتى الآن؟</p>
+              <button className="auth-register-link" onClick={() => showMode("register")}>
+                <span>سجّل ناديك الجديد وابدأ مجاناً</span>
+                <ArrowRight size={15} aria-hidden="true" />
+              </button>
+            </div>
           </>}
 
           {mode === "employee" && <>
-            <button className="auth-back" onClick={() => showMode("owner")}><ArrowRight size={15} /> العودة</button>
-            <span className="auth-step">دخول الموظفين</span>
-            <h1>مساحة فريقك</h1>
-            <p className="auth-description">استخدم بيانات الدخول التي أنشأها مالك النادي.</p>
+            <button className="auth-back" onClick={() => showMode("owner")}><ArrowRight size={15} /> العودة لتسجيل الدخول</button>
+            <div className="auth-welcome">
+              <h1>مساحة فريقك</h1>
+              <p>استخدم بيانات الدخول التي أنشأها مالك النادي.</p>
+            </div>
             <form className="auth-form" onSubmit={employeeLogin}>
               <label className="auth-field"><span>اسم المستخدم</span><input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required autoFocus /></label>
               <label className="auth-field"><span>كلمة المرور</span><input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
@@ -176,17 +189,19 @@ export function AuthGate({ onAuthenticated }: Props) {
           </>}
 
           {mode === "register" && <>
-            <button className="auth-back" onClick={() => showMode("owner")}><ArrowRight size={15} /> العودة</button>
-            <span className="auth-step">حساب جديد</span>
-            <h1>{googleEmail ? "كمّل تسجيل ناديك" : "ابدأ مع GymFlow"}</h1>
-            <p className="auth-description">{googleEmail ? "بيانات ناديك وحساب الإدارة." : "تحقق من حساب Google للبدء."}</p>
+            <button className="auth-back" onClick={() => showMode("owner")}><ArrowRight size={15} /> العودة لتسجيل الدخول</button>
+            <div className="auth-welcome">
+              <h1>{googleEmail ? "كمّل تسجيل ناديك" : "ابدأ مع GymFlow"}</h1>
+              <p>{googleEmail ? "بيانات ناديك وحساب الإدارة." : "تحقق من حساب Google للبدء."}</p>
+            </div>
             {googleEmail ? (
               <>
                 {googleEmail && <div className="auth-google-account"><GoogleMark /><span><small>حساب Google</small><strong dir="ltr">{googleEmail}</strong></span></div>}
                 <form className="auth-form" onSubmit={register}>
                   <label className="auth-field"><span>اسم النادي</span><input value={gymName} onChange={(event) => setGymName(event.target.value)} required maxLength={100} autoFocus /></label>
                   <label className="auth-field"><span>اسم المالك</span><input value={ownerName} onChange={(event) => setOwnerName(event.target.value)} required maxLength={100} /></label>
-                  <label className="auth-field"><span>اسم المستخدم للإدارة</span><input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required minLength={3} maxLength={32} pattern="[A-Za-z0-9._-]+" dir="ltr" /></label>
+                  <label className="auth-field"><span>اسم المستخدم للإدارة</span><input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required minLength={3} maxLength={32} pattern="[A-Za-z0-9._\x2D]{3,32}" title="من 3 إلى 32 حرفًا: حروف إنجليزية أو أرقام أو . أو - أو _" dir="ltr" /></label>
+                  <p className="auth-field-hint">من 3 إلى 32 حرفًا، ويقبل الحروف الإنجليزية والأرقام والنقطة والشرطة والشرطة السفلية.</p>
                   <label className="auth-field"><span>كلمة المرور <small>(٨ أحرف على الأقل)</small></span><input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} maxLength={128} /></label>
                   {error && <p className="auth-error" role="alert">{error}</p>}
                   <Button className="auth-primary" type="submit" disabled={busy}>{busy ? "جارٍ إنشاء الحساب..." : "إرسال طلب التسجيل"}</Button>
@@ -202,19 +217,22 @@ export function AuthGate({ onAuthenticated }: Props) {
               <button className="auth-employee-link" onClick={() => showMode("owner")}>لديك حساب؟ تسجيل الدخول</button>
             </>}
           </>}
-          {error && mode !== "employee" && <p className="auth-error" role="alert">{error}</p>}
+          {error && mode === "owner" && <p className="auth-error" role="alert">{error}</p>}
           {notice && <p className="auth-notice" role="status">{notice}</p>}
           {!isSupabaseConfigured && mode !== "employee" && <p className="auth-error" role="status">الدخول باستخدام Google غير متاح حاليًا.</p>}
         </section>
-      </section>
+      </div>
     </main>
   );
 }
 
 function GoogleMark() {
-  return <span className="google-mark" aria-hidden="true">G</span>;
-}
-
-function UsersRoundIcon() {
-  return <span className="auth-benefit-icon"><UserRound size={15} /></span>;
+  return (
+    <svg className="google-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335" />
+    </svg>
+  );
 }

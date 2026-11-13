@@ -51,7 +51,7 @@ export function normalizeUsername(value: unknown) {
   if (typeof value !== "string") throw new HttpError("اسم المستخدم مطلوب.", 400);
   const username = value.trim().toLowerCase();
   if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
-    throw new HttpError("اسم المستخدم يجب أن يتكون من 3 إلى 32 حرفًا إنجليزيًا أو رقمًا.", 400);
+    throw new HttpError("اسم المستخدم يجب أن يتكون من 3 إلى 32 حرفًا، ويقبل الحروف الإنجليزية والأرقام والنقطة والشرطة والشرطة السفلية.", 400);
   }
   return username;
 }

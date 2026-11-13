@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, type ButtonHTMLAttributes, type ReactNode } from "react";
-import { Check, X } from "lucide-react";
+import { Check, CircleHelp, CircleX, Clock3, X } from "lucide-react";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "quiet" | "danger";
@@ -111,8 +111,9 @@ export function StatusBadge({ children }: { children: string }) {
         : ["منتهي", "متأخر", "موقوف", "موقف"].includes(status)
           ? "danger"
           : "neutral";
+  const StatusIcon = kind === "success" ? Check : kind === "warning" ? Clock3 : kind === "danger" ? CircleX : CircleHelp;
 
-  return <span className={`status-badge status-${kind}`}>{children}</span>;
+  return <span className={`status-badge status-${kind}`}><StatusIcon size={13} aria-hidden="true" />{children}</span>;
 }
 
 export function Avatar({ initials, color = "mint" }: { initials: string; color?: string }) {
@@ -122,7 +123,7 @@ export function Avatar({ initials, color = "mint" }: { initials: string; color?:
 export function EmptyState({ title, description }: { title: string; description: string }) {
   return (
     <div className="empty-state">
-      <span className="empty-state-mark">—</span>
+      <span className="empty-state-mark"><CircleHelp size={20} aria-hidden="true" /></span>
       <h3>{title}</h3>
       <p>{description}</p>
     </div>

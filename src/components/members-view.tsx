@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import { Activity, CalendarDays, Check, ChevronDown, CreditCard, Eye, Plus, Search, Trash2, UserRound } from "lucide-react";
+import { Activity, BadgeCheck, CalendarDays, Check, ChevronDown, CircleX, Clock3, CreditCard, Eye, Plus, Search, Trash2, UserRound } from "lucide-react";
 import { normalizePhoneNumber, type Member, type MemberActivity } from "@/lib/gym-data";
 import { formatHistoryDate, formatHistoryTimestamp } from "@/lib/gym-data";
 import { Avatar, Button, EmptyState, Modal, PageHeading, StatusBadge } from "@/components/ui";
@@ -164,11 +164,11 @@ export function MembersView({
         action={canWriteMembers ? <Button icon={<Plus size={17} />} onClick={() => onAddOpenChange(true)}>إضافة عضو</Button> : undefined}
       />
       <div className="members-summary">
-        <div><span className="summary-dot summary-dot-active" /><strong>{members.filter((m) => m.status === "نشط").length}</strong><span>عضو نشط</span></div>
+        <div><BadgeCheck className="summary-icon summary-icon-active" size={16} aria-hidden="true" /><strong>{members.filter((m) => m.status === "نشط").length}</strong><span>عضو نشط</span></div>
         <i />
-        <div><span className="summary-dot summary-dot-warning" /><strong>{members.filter((m) => m.status === "قارب على الانتهاء").length}</strong><span>قرب انتهاء اشتراكه</span></div>
+        <div><Clock3 className="summary-icon summary-icon-warning" size={16} aria-hidden="true" /><strong>{members.filter((m) => m.status === "قارب على الانتهاء").length}</strong><span>قرب انتهاء اشتراكه</span></div>
         <i />
-        <div><span className="summary-dot summary-dot-muted" /><strong>{members.filter((m) => m.status === "منتهي").length}</strong><span>اشتراك منتهي</span></div>
+        <div><CircleX className="summary-icon summary-icon-muted" size={16} aria-hidden="true" /><strong>{members.filter((m) => m.status === "منتهي").length}</strong><span>اشتراك منتهي</span></div>
       </div>
 
       <section className="panel member-table-panel">
@@ -194,7 +194,7 @@ export function MembersView({
                     <td>{member.plan}</td>
                     <td>{member.joinedAt}</td>
                     <td><StatusBadge>{member.status}</StatusBadge></td>
-                    <td><span className={`payment-status ${member.paid ? "payment-paid" : "payment-due"}`}><i />{member.paid ? "تم الدفع" : "مستحق"}</span></td>
+                    <td><span className={`payment-status ${member.paid ? "payment-paid" : "payment-due"}`}>{member.paid ? <Check size={14} aria-hidden="true" /> : <Clock3 size={14} aria-hidden="true" />}{member.paid ? "تم الدفع" : "مستحق"}</span></td>
                     <td><div className="row-actions">
                       <button aria-label={`عرض ${member.name}`} title="عرض الملف والسجل" onClick={(event) => { event.stopPropagation(); openMember(member); }}><Eye size={16} /></button>
                       {canRenewMembers && availablePlans.length > 0 && <button aria-label={`تجديد ${member.name}`} title="تجديد الاشتراك" onClick={(event) => { event.stopPropagation(); openRenewal(member); }}><Check size={16} /></button>}
@@ -243,7 +243,7 @@ export function MembersView({
             <div><span>المتبقي على العضو</span><strong>{outstandingAmount.toLocaleString("ar-EG")} ج.م</strong></div>
             <div><span>حالة سداد الاشتراك الحالي</span><strong>{selected.paid ? "تم الدفع" : "مستحق"}</strong></div>
           </div>
-          <div className="history-section-heading"><div><span className="section-index">MEMBER RECORD <i /> {selected.activityHistory.length} EVENTS</span><h3>رحلة {selected.name.split(" ")[0]} في النادي</h3></div><div className="heading-actions">{canWritePayments && outstandingAmount > 0 && <Button variant="secondary" onClick={() => { setPaymentAmount(String(outstandingAmount)); setPaymentOpen(true); }}>تسجيل دفعة</Button>}{canRenewMembers && <Button icon={<Plus size={15} />} onClick={() => openRenewal(selected)}>تجديد الاشتراك</Button>}</div></div>
+          <div className="history-section-heading"><div><span className="section-index">MEMBER RECORD {selected.activityHistory.length} EVENTS</span><h3>رحلة {selected.name.split(" ")[0]} في النادي</h3></div><div className="heading-actions">{canWritePayments && outstandingAmount > 0 && <Button variant="secondary" onClick={() => { setPaymentAmount(String(outstandingAmount)); setPaymentOpen(true); }}>تسجيل دفعة</Button>}{canRenewMembers && <Button icon={<Plus size={15} />} onClick={() => openRenewal(selected)}>تجديد الاشتراك</Button>}</div></div>
           <div className="history-filters" role="group" aria-label="تصفية سجل العضو">
             <button className={historyFilter === "all" ? "history-filter-active" : ""} onClick={() => setHistoryFilter("all")}>كل السجل</button>
             <button className={historyFilter === "membership" ? "history-filter-active" : ""} onClick={() => setHistoryFilter("membership")}>الاشتراكات</button>
@@ -255,7 +255,7 @@ export function MembersView({
             {!visibleHistory.length && <EmptyState title="لا توجد سجلات هنا" description="ستظهر الأحداث الجديدة في هذا القسم." />}
           </div>
           <div className="membership-history">
-            <div className="history-section-heading history-section-heading-small"><div><span className="section-index">SUBSCRIPTION LOG <i /> {selected.membershipHistory.length} TERMS</span><h3>فترات الاشتراك السابقة</h3></div></div>
+            <div className="history-section-heading history-section-heading-small"><div><span className="section-index">SUBSCRIPTION LOG {selected.membershipHistory.length} TERMS</span><h3>فترات الاشتراك السابقة</h3></div></div>
             <div className="membership-terms">
               {[...selected.membershipHistory].reverse().map((period, index) => <div className="membership-term" key={period.id}>
                 <span className="term-number">{String(selected.membershipHistory.length - index).padStart(2, "0")}</span>

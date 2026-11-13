@@ -1,9 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 100" fill="none">
-  <rect x="3" y="3" width="90" height="90" rx="25" fill="#0E1A33"/>
-  <path d="M65.8 30.1A27 27 0 1 0 73 48H49" stroke="#C6E94A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="m62 40 9 8-9 8" stroke="#F7F5EF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="27" cy="69" r="3" fill="#F7F5EF" fill-opacity=".72"/>
-  <text x="116" y="58" fill="#0E1A33" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" letter-spacing="-2">Gym</text>
-  <text x="208" y="58" fill="#0A7A52" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" letter-spacing="-2">Flow</text>
-  <text x="119" y="80" fill="#5E667A" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="600" letter-spacing="2.2">FITNESS IN FLOW</text>
+  <path d="M29 48h38" stroke="#0F172A" stroke-width="7" stroke-linecap="round"/>
+  <path d="M19 36h10v24H19zM67 36h10v24H67z" fill="#EA580C"/>
+  <path d="M30 40v16M66 40v16" stroke="#0F172A" stroke-width="4" stroke-linecap="round"/>
+  <text x="116" y="58" fill="#0F172A" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" letter-spacing="-2">Gym</text>
+  <text x="208" y="58" fill="#EA580C" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" letter-spacing="-2">Flow</text>
+  <text x="119" y="80" fill="#475569" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="600" letter-spacing="2.2">FITNESS IN FLOW</text>
 </svg>
